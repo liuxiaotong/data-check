@@ -1,0 +1,393 @@
+"""Core data quality checker."""
+
+import json
+import hashlib
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Set
+
+from datacheck.rules import Rule, RuleResult, RuleSet, Severity
+
+
+@dataclass
+class CheckResult:
+    """Result of quality check."""
+
+    success: bool = True
+    error: str = ""
+    total_samples: int = 0
+    passed_samples: int = 0
+    failed_samples: int = 0
+    error_count: int = 0
+    warning_count: int = 0
+    info_count: int = 0
+    pass_rate: float = 0.0
+    rule_results: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    failed_sample_ids: List[str] = field(default_factory=list)
+    duplicates: List[List[str]] = field(default_factory=list)
+    distribution: Dict[str, Any] = field(default_factory=dict)
+
+
+class DataChecker:
+    """Check data quality against rules and schema.
+
+    Provides:
+    - Rule-based validation
+    - Duplicate detection
+    - Distribution analysis
+    - Anomaly detection
+    """
+
+    def __init__(self, ruleset: Optional[RuleSet] = None):
+        self.ruleset = ruleset or RuleSet()
+
+    def check(
+        self,
+        samples: List[Dict[str, Any]],
+        schema: Dict[str, Any],
+        reference_samples: Optional[List[Dict[str, Any]]] = None,
+        on_progress: Optional[Callable[[int, int], None]] = None,
+    ) -> CheckResult:
+        """Check samples against schema and rules.
+
+        Args:
+            samples: List of samples to check
+            schema: Data schema definition
+            reference_samples: Optional reference samples for comparison
+            on_progress: Progress callback
+
+        Returns:
+            CheckResult with check status and details
+        """
+        result = CheckResult()
+        result.total_samples = len(samples)
+
+        if not samples:
+            result.success = True
+            result.pass_rate = 1.0
+            return result
+
+        # Per-rule statistics
+        rule_stats = defaultdict(lambda: {"passed": 0, "failed": 0, "sample_ids": []})
+
+        # Check each sample
+        sample_failures = defaultdict(list)
+        passed_count = 0
+
+        for i, sample in enumerate(samples):
+            sample_id = sample.get("id", f"sample_{i}")
+            sample_passed = True
+
+            for rule in self.ruleset.get_enabled_rules():
+                rule_result = rule.check(sample, schema)
+
+                if rule_result.passed:
+                    rule_stats[rule.id]["passed"] += 1
+                else:
+                    rule_stats[rule.id]["failed"] += 1
+                    rule_stats[rule.id]["sample_ids"].append(sample_id)
+                    sample_failures[sample_id].append(rule_result)
+                    sample_passed = False
+
+                    # Count by severity
+                    if rule_result.severity == Severity.ERROR:
+                        result.error_count += 1
+                    elif rule_result.severity == Severity.WARNING:
+                        result.warning_count += 1
+                    else:
+                        result.info_count += 1
+
+            if sample_passed:
+                passed_count += 1
+            else:
+                result.failed_sample_ids.append(sample_id)
+
+            if on_progress:
+                on_progress(i + 1, len(samples))
+
+        result.passed_samples = passed_count
+        result.failed_samples = len(samples) - passed_count
+        result.pass_rate = passed_count / len(samples) if samples else 1.0
+
+        # Build rule results summary
+        for rule_id, stats in rule_stats.items():
+            rule = self.ruleset.rules.get(rule_id)
+            result.rule_results[rule_id] = {
+                "name": rule.name if rule else rule_id,
+                "passed": stats["passed"],
+                "failed": stats["failed"],
+                "severity": rule.severity.value if rule else "warning",
+                "failed_samples": stats["sample_ids"][:10],  # Limit to 10
+            }
+
+        # Check for duplicates
+        result.duplicates = self._find_duplicates(samples)
+        if result.duplicates:
+            result.warning_count += len(result.duplicates)
+
+        # Compute distribution
+        result.distribution = self._compute_distribution(samples, schema)
+
+        # Compare with reference if provided
+        if reference_samples:
+            result.distribution["reference_comparison"] = self._compare_distributions(
+                samples, reference_samples, schema
+            )
+
+        return result
+
+    def check_file(
+        self,
+        data_path: str,
+        schema_path: Optional[str] = None,
+        output_path: Optional[str] = None,
+    ) -> CheckResult:
+        """Check a data file.
+
+        Args:
+            data_path: Path to data JSON file
+            schema_path: Path to schema JSON file (optional)
+            output_path: Path to save report (optional)
+
+        Returns:
+            CheckResult
+        """
+        data_path = Path(data_path)
+
+        # Load data
+        with open(data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Extract samples
+        if isinstance(data, list):
+            samples = data
+        else:
+            samples = data.get("samples", data.get("responses", []))
+
+        # Load schema
+        schema = {}
+        if schema_path:
+            with open(schema_path, "r", encoding="utf-8") as f:
+                schema = json.load(f)
+        elif "schema" in data:
+            schema = data["schema"]
+
+        # Run check
+        result = self.check(samples, schema)
+
+        # Save report if output path provided
+        if output_path:
+            self._save_report(result, output_path)
+
+        return result
+
+    def check_from_datarecipe(
+        self,
+        analysis_dir: str,
+        data_path: Optional[str] = None,
+    ) -> CheckResult:
+        """Check data using DataRecipe analysis output.
+
+        Args:
+            analysis_dir: Path to DataRecipe analysis output
+            data_path: Path to data file to check (optional, defaults to synthetic data)
+
+        Returns:
+            CheckResult
+        """
+        analysis_dir = Path(analysis_dir)
+
+        # Load schema
+        schema_path = analysis_dir / "04_复刻指南" / "DATA_SCHEMA.json"
+        if not schema_path.exists():
+            return CheckResult(success=False, error=f"Schema not found: {schema_path}")
+
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+
+        # Determine data path
+        if data_path is None:
+            # Try synthetic data first, then samples
+            synthetic_path = analysis_dir / "11_合成数据" / "synthetic.json"
+            samples_path = analysis_dir / "09_样例数据" / "samples.json"
+
+            if synthetic_path.exists():
+                data_path = synthetic_path
+            elif samples_path.exists():
+                data_path = samples_path
+            else:
+                return CheckResult(success=False, error="No data file found")
+        else:
+            data_path = Path(data_path)
+
+        # Load data
+        with open(data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        samples = data.get("samples", [])
+
+        # Load reference samples for comparison
+        reference = None
+        ref_path = analysis_dir / "09_样例数据" / "samples.json"
+        if ref_path.exists() and str(ref_path) != str(data_path):
+            with open(ref_path, "r", encoding="utf-8") as f:
+                ref_data = json.load(f)
+                reference = ref_data.get("samples", [])
+
+        return self.check(samples, schema, reference_samples=reference)
+
+    def _find_duplicates(self, samples: List[Dict[str, Any]]) -> List[List[str]]:
+        """Find duplicate samples."""
+        # Hash each sample's content
+        hash_to_ids = defaultdict(list)
+
+        for i, sample in enumerate(samples):
+            sample_id = sample.get("id", f"sample_{i}")
+            data = sample.get("data", sample)
+
+            # Create content hash
+            content = json.dumps(data, sort_keys=True, ensure_ascii=False)
+            content_hash = hashlib.md5(content.encode()).hexdigest()
+
+            hash_to_ids[content_hash].append(sample_id)
+
+        # Find duplicates
+        duplicates = [ids for ids in hash_to_ids.values() if len(ids) > 1]
+        return duplicates
+
+    def _compute_distribution(
+        self,
+        samples: List[Dict[str, Any]],
+        schema: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Compute distribution statistics."""
+        distribution = {
+            "total": len(samples),
+            "fields": {},
+        }
+
+        if not samples:
+            return distribution
+
+        # Analyze each field
+        field_values = defaultdict(list)
+
+        for sample in samples:
+            data = sample.get("data", sample)
+            for key, value in data.items():
+                field_values[key].append(value)
+
+        for field_name, values in field_values.items():
+            field_stats = {
+                "count": len(values),
+                "null_count": sum(1 for v in values if v is None),
+            }
+
+            # String stats
+            string_values = [v for v in values if isinstance(v, str)]
+            if string_values:
+                lengths = [len(v) for v in string_values]
+                field_stats["type"] = "string"
+                field_stats["length_stats"] = {
+                    "min": min(lengths),
+                    "max": max(lengths),
+                    "avg": sum(lengths) / len(lengths),
+                }
+
+                # Unique ratio
+                unique_count = len(set(string_values))
+                field_stats["unique_count"] = unique_count
+                field_stats["unique_ratio"] = unique_count / len(string_values)
+
+            # Number stats
+            number_values = [v for v in values if isinstance(v, (int, float))]
+            if number_values:
+                field_stats["type"] = "number"
+                field_stats["value_stats"] = {
+                    "min": min(number_values),
+                    "max": max(number_values),
+                    "avg": sum(number_values) / len(number_values),
+                }
+
+                # Value distribution
+                counter = Counter(number_values)
+                field_stats["value_distribution"] = dict(counter.most_common(10))
+
+            distribution["fields"][field_name] = field_stats
+
+        return distribution
+
+    def _compare_distributions(
+        self,
+        samples: List[Dict[str, Any]],
+        reference: List[Dict[str, Any]],
+        schema: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Compare distribution with reference samples."""
+        comparison = {
+            "sample_count": len(samples),
+            "reference_count": len(reference),
+            "field_comparisons": {},
+        }
+
+        # Get distributions
+        sample_dist = self._compute_distribution(samples, schema)
+        ref_dist = self._compute_distribution(reference, schema)
+
+        # Compare each field
+        for field_name in set(sample_dist["fields"].keys()) | set(ref_dist["fields"].keys()):
+            sample_field = sample_dist["fields"].get(field_name, {})
+            ref_field = ref_dist["fields"].get(field_name, {})
+
+            field_comparison = {
+                "in_samples": field_name in sample_dist["fields"],
+                "in_reference": field_name in ref_dist["fields"],
+            }
+
+            # Compare lengths for strings
+            if "length_stats" in sample_field and "length_stats" in ref_field:
+                s_len = sample_field["length_stats"]
+                r_len = ref_field["length_stats"]
+                field_comparison["length_comparison"] = {
+                    "sample_avg": s_len["avg"],
+                    "reference_avg": r_len["avg"],
+                    "diff_percent": abs(s_len["avg"] - r_len["avg"]) / r_len["avg"] * 100 if r_len["avg"] > 0 else 0,
+                }
+
+            # Compare unique ratios
+            if "unique_ratio" in sample_field and "unique_ratio" in ref_field:
+                field_comparison["diversity_comparison"] = {
+                    "sample_unique_ratio": sample_field["unique_ratio"],
+                    "reference_unique_ratio": ref_field["unique_ratio"],
+                }
+
+            comparison["field_comparisons"][field_name] = field_comparison
+
+        return comparison
+
+    def _save_report(self, result: CheckResult, output_path: str):
+        """Save check report to file."""
+        report = {
+            "generated_at": datetime.now().isoformat(),
+            "summary": {
+                "total_samples": result.total_samples,
+                "passed_samples": result.passed_samples,
+                "failed_samples": result.failed_samples,
+                "pass_rate": f"{result.pass_rate:.1%}",
+                "error_count": result.error_count,
+                "warning_count": result.warning_count,
+                "info_count": result.info_count,
+            },
+            "rule_results": result.rule_results,
+            "duplicates": result.duplicates,
+            "distribution": result.distribution,
+            "failed_sample_ids": result.failed_sample_ids[:50],  # Limit
+        }
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
