@@ -78,7 +78,7 @@ class DataChecker:
 
         for i, sample in enumerate(samples):
             sample_id = sample.get("id", f"sample_{i}")
-            sample_passed = True
+            sample_has_error = False  # Only ERROR severity counts as failure
 
             for rule in self.ruleset.get_enabled_rules():
                 rule_result = rule.check(sample, schema)
@@ -89,17 +89,17 @@ class DataChecker:
                     rule_stats[rule.id]["failed"] += 1
                     rule_stats[rule.id]["sample_ids"].append(sample_id)
                     sample_failures[sample_id].append(rule_result)
-                    sample_passed = False
 
-                    # Count by severity
+                    # Count by severity - only ERROR marks sample as failed
                     if rule_result.severity == Severity.ERROR:
                         result.error_count += 1
+                        sample_has_error = True
                     elif rule_result.severity == Severity.WARNING:
                         result.warning_count += 1
                     else:
                         result.info_count += 1
 
-            if sample_passed:
+            if not sample_has_error:
                 passed_count += 1
             else:
                 result.failed_sample_ids.append(sample_id)
