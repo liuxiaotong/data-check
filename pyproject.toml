@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 authors = [
     { name = "Liu Kai", email = "mrliukai@gmail.com" }
 ]
-keywords = ["quality", "validation", "data", "machine-learning"]
+keywords = ["data-quality", "validation", "anomaly-detection", "data-inspection", "machine-learning", "training-data", "ai"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
