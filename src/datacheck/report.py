@@ -4,10 +4,9 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from datacheck.checker import CheckResult
-from datacheck.rules import Severity
 
 
 @dataclass
@@ -28,8 +27,8 @@ class QualityReport:
             "",
             "## 概要",
             "",
-            f"| 指标 | 数值 |",
-            f"|------|------|",
+            "| 指标 | 数值 |",
+            "|------|------|",
             f"| 总样本数 | {self.result.total_samples} |",
             f"| 通过样本 | {self.result.passed_samples} |",
             f"| 失败样本 | {self.result.failed_samples} |",
@@ -48,32 +47,38 @@ class QualityReport:
         else:
             grade = "🔴 需改进"
 
-        lines.extend([
-            f"### 质量评级: {grade} ({score:.0f}分)",
-            "",
-        ])
+        lines.extend(
+            [
+                f"### 质量评级: {grade} ({score:.0f}分)",
+                "",
+            ]
+        )
 
         # Issue summary
         if self.result.error_count or self.result.warning_count:
-            lines.extend([
-                "### 问题统计",
-                "",
-                f"| 级别 | 数量 |",
-                f"|------|------|",
-                f"| 🔴 错误 | {self.result.error_count} |",
-                f"| 🟡 警告 | {self.result.warning_count} |",
-                f"| 🔵 提示 | {self.result.info_count} |",
-                "",
-            ])
+            lines.extend(
+                [
+                    "### 问题统计",
+                    "",
+                    "| 级别 | 数量 |",
+                    "|------|------|",
+                    f"| 🔴 错误 | {self.result.error_count} |",
+                    f"| 🟡 警告 | {self.result.warning_count} |",
+                    f"| 🔵 提示 | {self.result.info_count} |",
+                    "",
+                ]
+            )
 
         # Rule results
         if self.result.rule_results:
-            lines.extend([
-                "---",
-                "",
-                "## 规则检查详情",
-                "",
-            ])
+            lines.extend(
+                [
+                    "---",
+                    "",
+                    "## 规则检查详情",
+                    "",
+                ]
+            )
 
             for rule_id, rule_data in self.result.rule_results.items():
                 severity = rule_data.get("severity", "warning")
@@ -94,14 +99,16 @@ class QualityReport:
 
         # Duplicates
         if self.result.duplicates:
-            lines.extend([
-                "---",
-                "",
-                "## 重复检测",
-                "",
-                f"发现 **{len(self.result.duplicates)}** 组重复数据:",
-                "",
-            ])
+            lines.extend(
+                [
+                    "---",
+                    "",
+                    "## 重复检测",
+                    "",
+                    f"发现 **{len(self.result.duplicates)}** 组重复数据:",
+                    "",
+                ]
+            )
 
             for i, dup_group in enumerate(self.result.duplicates[:10], 1):
                 lines.append(f"{i}. {', '.join(dup_group)}")
@@ -113,12 +120,14 @@ class QualityReport:
 
         # Distribution
         if self.result.distribution.get("fields"):
-            lines.extend([
-                "---",
-                "",
-                "## 数据分布",
-                "",
-            ])
+            lines.extend(
+                [
+                    "---",
+                    "",
+                    "## 数据分布",
+                    "",
+                ]
+            )
 
             for field_name, field_stats in self.result.distribution["fields"].items():
                 lines.append(f"### {field_name}")
@@ -126,7 +135,9 @@ class QualityReport:
 
                 if "length_stats" in field_stats:
                     stats = field_stats["length_stats"]
-                    lines.append(f"- 长度: 最小 {stats['min']}, 最大 {stats['max']}, 平均 {stats['avg']:.0f}")
+                    lines.append(
+                        f"- 长度: 最小 {stats['min']}, 最大 {stats['max']}, 平均 {stats['avg']:.0f}"
+                    )
 
                 if "unique_ratio" in field_stats:
                     lines.append(f"- 唯一值比例: {field_stats['unique_ratio']:.1%}")
@@ -141,32 +152,38 @@ class QualityReport:
         # Reference comparison
         if "reference_comparison" in self.result.distribution:
             comp = self.result.distribution["reference_comparison"]
-            lines.extend([
-                "---",
-                "",
-                "## 与参考数据对比",
-                "",
-                f"样本数量: {comp['sample_count']} vs 参考: {comp['reference_count']}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "---",
+                    "",
+                    "## 与参考数据对比",
+                    "",
+                    f"样本数量: {comp['sample_count']} vs 参考: {comp['reference_count']}",
+                    "",
+                ]
+            )
 
             for field_name, field_comp in comp.get("field_comparisons", {}).items():
                 if "length_comparison" in field_comp:
                     lc = field_comp["length_comparison"]
-                    lines.append(f"- **{field_name}** 平均长度: {lc['sample_avg']:.0f} vs {lc['reference_avg']:.0f} ({lc['diff_percent']:.1f}% 差异)")
+                    lines.append(
+                        f"- **{field_name}** 平均长度: {lc['sample_avg']:.0f} vs {lc['reference_avg']:.0f} ({lc['diff_percent']:.1f}% 差异)"
+                    )
 
             lines.append("")
 
         # Failed samples
         if self.result.failed_sample_ids:
-            lines.extend([
-                "---",
-                "",
-                "## 失败样本列表",
-                "",
-                f"共 {len(self.result.failed_sample_ids)} 个样本未通过检查:",
-                "",
-            ])
+            lines.extend(
+                [
+                    "---",
+                    "",
+                    "## 失败样本列表",
+                    "",
+                    f"共 {len(self.result.failed_sample_ids)} 个样本未通过检查:",
+                    "",
+                ]
+            )
 
             for sid in self.result.failed_sample_ids[:20]:
                 lines.append(f"- {sid}")
@@ -174,12 +191,14 @@ class QualityReport:
             if len(self.result.failed_sample_ids) > 20:
                 lines.append(f"\n(还有 {len(self.result.failed_sample_ids) - 20} 个...)")
 
-        lines.extend([
-            "",
-            "---",
-            "",
-            "> 报告由 DataCheck 自动生成",
-        ])
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                "> 报告由 DataCheck 自动生成",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -232,12 +251,12 @@ class QualityReport:
         else:
             grade = "🔴 需改进"
 
-        print(f"\n{'='*50}")
-        print(f"  数据质量检查结果")
-        print(f"{'='*50}")
+        print(f"\n{'=' * 50}")
+        print("  数据质量检查结果")
+        print(f"{'=' * 50}")
         print(f"  总样本: {self.result.total_samples}")
         print(f"  通过: {self.result.passed_samples}")
         print(f"  失败: {self.result.failed_samples}")
         print(f"  通过率: {self.result.pass_rate:.1%}")
         print(f"  评级: {grade}")
-        print(f"{'='*50}\n")
+        print(f"{'=' * 50}\n")

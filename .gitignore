@@ -29,6 +29,24 @@ htmlcov/
 *_report.md
 *_report.json
 
+# Environment
+.env
+.env.local
+
 # OS
 .DS_Store
 Thumbs.db
+
+# ===================
+# Supplemented common patterns
+# ===================
+
+# Python wheels
+*.whl
+
+# Virtual environments
+env/
+
+# Linting / type checking
+.mypy_cache/
+.ruff_cache/

@@ -8,14 +8,16 @@ from typing import Any, Callable, Dict, List, Optional
 
 class Severity(Enum):
     """Rule severity levels."""
-    ERROR = "error"      # Must fix
+
+    ERROR = "error"  # Must fix
     WARNING = "warning"  # Should fix
-    INFO = "info"        # Nice to fix
+    INFO = "info"  # Nice to fix
 
 
 @dataclass
 class RuleResult:
     """Result of a single rule check."""
+
     rule_id: str
     rule_name: str
     passed: bool
@@ -37,6 +39,7 @@ class Rule:
         check_fn: Function that performs the check
         enabled: Whether rule is active
     """
+
     id: str
     name: str
     description: str
@@ -84,68 +87,82 @@ class RuleSet:
     def _load_builtin_rules(self):
         """Load built-in rules."""
         # Required fields
-        self.add_rule(Rule(
-            id="required_fields",
-            name="必填字段检查",
-            description="检查是否包含所有必填字段",
-            severity=Severity.ERROR,
-            check_fn=self._check_required_fields,
-        ))
+        self.add_rule(
+            Rule(
+                id="required_fields",
+                name="必填字段检查",
+                description="检查是否包含所有必填字段",
+                severity=Severity.ERROR,
+                check_fn=self._check_required_fields,
+            )
+        )
 
         # Non-empty check
-        self.add_rule(Rule(
-            id="non_empty",
-            name="非空检查",
-            description="检查关键字段是否为空",
-            severity=Severity.ERROR,
-            check_fn=self._check_non_empty,
-        ))
+        self.add_rule(
+            Rule(
+                id="non_empty",
+                name="非空检查",
+                description="检查关键字段是否为空",
+                severity=Severity.ERROR,
+                check_fn=self._check_non_empty,
+            )
+        )
 
         # Length check
-        self.add_rule(Rule(
-            id="length_bounds",
-            name="长度边界检查",
-            description="检查文本长度是否在合理范围内",
-            severity=Severity.WARNING,
-            check_fn=self._check_length_bounds,
-        ))
+        self.add_rule(
+            Rule(
+                id="length_bounds",
+                name="长度边界检查",
+                description="检查文本长度是否在合理范围内",
+                severity=Severity.WARNING,
+                check_fn=self._check_length_bounds,
+            )
+        )
 
         # Duplicate check (placeholder, needs context)
-        self.add_rule(Rule(
-            id="no_duplicates",
-            name="重复检查",
-            description="检查是否存在重复内容",
-            severity=Severity.WARNING,
-            check_fn=None,  # Handled at dataset level
-            enabled=False,
-        ))
+        self.add_rule(
+            Rule(
+                id="no_duplicates",
+                name="重复检查",
+                description="检查是否存在重复内容",
+                severity=Severity.WARNING,
+                check_fn=None,  # Handled at dataset level
+                enabled=False,
+            )
+        )
 
         # Format check
-        self.add_rule(Rule(
-            id="format_valid",
-            name="格式检查",
-            description="检查数据格式是否正确",
-            severity=Severity.ERROR,
-            check_fn=self._check_format,
-        ))
+        self.add_rule(
+            Rule(
+                id="format_valid",
+                name="格式检查",
+                description="检查数据格式是否正确",
+                severity=Severity.ERROR,
+                check_fn=self._check_format,
+            )
+        )
 
         # Language consistency
-        self.add_rule(Rule(
-            id="language_consistency",
-            name="语言一致性",
-            description="检查文本语言是否一致",
-            severity=Severity.INFO,
-            check_fn=self._check_language,
-        ))
+        self.add_rule(
+            Rule(
+                id="language_consistency",
+                name="语言一致性",
+                description="检查文本语言是否一致",
+                severity=Severity.INFO,
+                check_fn=self._check_language,
+            )
+        )
 
         # Score validity
-        self.add_rule(Rule(
-            id="score_valid",
-            name="评分有效性",
-            description="检查评分是否在有效范围内",
-            severity=Severity.ERROR,
-            check_fn=self._check_score_valid,
-        ))
+        self.add_rule(
+            Rule(
+                id="score_valid",
+                name="评分有效性",
+                description="检查评分是否在有效范围内",
+                severity=Severity.ERROR,
+                check_fn=self._check_score_valid,
+            )
+        )
 
     def add_rule(self, rule: Rule):
         """Add a rule to the set."""
@@ -242,7 +259,7 @@ class RuleSet:
 
         for key, value in data.items():
             if isinstance(value, str) and len(value) > 10:
-                chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', value))
+                chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", value))
                 ratio = chinese_chars / len(value) if len(value) > 0 else 0
                 has_chinese.append(ratio > 0.1)
 
@@ -275,26 +292,31 @@ class RuleSet:
 
 # Preset rule sets
 
+
 def get_sft_ruleset() -> RuleSet:
     """Get rule set for SFT data."""
     ruleset = RuleSet("sft")
 
     # Add SFT-specific rules
-    ruleset.add_rule(Rule(
-        id="instruction_quality",
-        name="指令质量",
-        description="检查指令是否清晰具体",
-        severity=Severity.WARNING,
-        check_fn=lambda s, _: len(s.get("data", s).get("instruction", "")) >= 10,
-    ))
+    ruleset.add_rule(
+        Rule(
+            id="instruction_quality",
+            name="指令质量",
+            description="检查指令是否清晰具体",
+            severity=Severity.WARNING,
+            check_fn=lambda s, _: len(s.get("data", s).get("instruction", "")) >= 10,
+        )
+    )
 
-    ruleset.add_rule(Rule(
-        id="response_quality",
-        name="回复质量",
-        description="检查回复是否足够详细",
-        severity=Severity.WARNING,
-        check_fn=lambda s, _: len(s.get("data", s).get("response", "")) >= 20,
-    ))
+    ruleset.add_rule(
+        Rule(
+            id="response_quality",
+            name="回复质量",
+            description="检查回复是否足够详细",
+            severity=Severity.WARNING,
+            check_fn=lambda s, _: len(s.get("data", s).get("response", "")) >= 20,
+        )
+    )
 
     return ruleset
 
@@ -304,12 +326,16 @@ def get_preference_ruleset() -> RuleSet:
     ruleset = RuleSet("preference")
 
     # Add preference-specific rules
-    ruleset.add_rule(Rule(
-        id="chosen_rejected_different",
-        name="chosen/rejected 差异",
-        description="检查 chosen 和 rejected 是否不同",
-        severity=Severity.ERROR,
-        check_fn=lambda s, _: s.get("data", s).get("chosen") != s.get("data", s).get("rejected"),
-    ))
+    ruleset.add_rule(
+        Rule(
+            id="chosen_rejected_different",
+            name="chosen/rejected 差异",
+            description="检查 chosen 和 rejected 是否不同",
+            severity=Severity.ERROR,
+            check_fn=lambda s, _: (
+                s.get("data", s).get("chosen") != s.get("data", s).get("rejected")
+            ),
+        )
+    )
 
     return ruleset

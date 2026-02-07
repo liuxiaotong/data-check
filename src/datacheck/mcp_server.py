@@ -8,6 +8,7 @@ try:
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
     from mcp.types import Tool, TextContent
+
     HAS_MCP = True
 except ImportError:
     HAS_MCP = False
@@ -172,11 +173,20 @@ def create_server() -> "Server":
 
             # Return summary
             score = result.pass_rate * 100
-            grade = "🟢 优秀" if score >= 90 else "🟡 良好" if score >= 70 else "🟠 一般" if score >= 50 else "🔴 需改进"
+            grade = (
+                "🟢 优秀"
+                if score >= 90
+                else "🟡 良好"
+                if score >= 70
+                else "🟠 一般"
+                if score >= 50
+                else "🔴 需改进"
+            )
 
-            return [TextContent(
-                type="text",
-                text=f"""## 数据验证完成
+            return [
+                TextContent(
+                    type="text",
+                    text=f"""## 数据验证完成
 
 ### 结果
 - 通过率: **{result.pass_rate:.1%}**
@@ -188,8 +198,9 @@ def create_server() -> "Server":
 已保存到: {output_path}
 
 {"### 重复数据" + chr(10) + f"发现 {len(result.duplicates)} 组重复" if result.duplicates else ""}
-"""
-            )]
+""",
+                )
+            ]
 
         elif name == "compare_distributions":
             file_paths = arguments["file_paths"]
@@ -202,15 +213,19 @@ def create_server() -> "Server":
                 with open(file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-                samples = data.get("samples", data.get("responses", data if isinstance(data, list) else []))
+                samples = data.get(
+                    "samples", data.get("responses", data if isinstance(data, list) else [])
+                )
                 checker = DataChecker()
                 result = checker.check(samples, {})
 
-                distributions.append({
-                    "file": Path(file_path).name,
-                    "count": len(samples),
-                    "dist": result.distribution,
-                })
+                distributions.append(
+                    {
+                        "file": Path(file_path).name,
+                        "count": len(samples),
+                        "dist": result.distribution,
+                    }
+                )
 
             # Build comparison
             lines = ["## 数据分布对比", ""]
@@ -240,19 +255,23 @@ def create_server() -> "Server":
             lines = ["## 可用质量检查规则", ""]
 
             for rule in ruleset.rules.values():
-                severity_icon = {"error": "🔴", "warning": "🟡", "info": "🔵"}.get(rule.severity.value, "⚪")
+                severity_icon = {"error": "🔴", "warning": "🟡", "info": "🔵"}.get(
+                    rule.severity.value, "⚪"
+                )
                 status = "✓" if rule.enabled else "✗"
                 lines.append(f"- {status} **{rule.name}** {severity_icon}")
                 lines.append(f"  - ID: `{rule.id}`")
                 lines.append(f"  - {rule.description}")
                 lines.append("")
 
-            lines.extend([
-                "## 预设规则集",
-                "- `default`: 通用规则",
-                "- `sft`: SFT 数据规则",
-                "- `preference`: 偏好数据规则",
-            ])
+            lines.extend(
+                [
+                    "## 预设规则集",
+                    "- `default`: 通用规则",
+                    "- `sft`: SFT 数据规则",
+                    "- `preference`: 偏好数据规则",
+                ]
+            )
 
             return [TextContent(type="text", text="\n".join(lines))]
 
@@ -275,6 +294,7 @@ async def serve():
 def main():
     """主入口."""
     import asyncio
+
     asyncio.run(serve())
 
 

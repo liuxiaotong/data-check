@@ -6,9 +6,9 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
-from datacheck.rules import Rule, RuleResult, RuleSet, Severity
+from datacheck.rules import RuleSet, Severity
 
 
 @dataclass
@@ -353,7 +353,9 @@ class DataChecker:
                 field_comparison["length_comparison"] = {
                     "sample_avg": s_len["avg"],
                     "reference_avg": r_len["avg"],
-                    "diff_percent": abs(s_len["avg"] - r_len["avg"]) / r_len["avg"] * 100 if r_len["avg"] > 0 else 0,
+                    "diff_percent": abs(s_len["avg"] - r_len["avg"]) / r_len["avg"] * 100
+                    if r_len["avg"] > 0
+                    else 0,
                 }
 
             # Compare unique ratios

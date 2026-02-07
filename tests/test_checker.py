@@ -2,7 +2,7 @@
 
 import pytest
 
-from datacheck.checker import DataChecker, CheckResult
+from datacheck.checker import DataChecker
 from datacheck.rules import RuleSet, Severity
 
 

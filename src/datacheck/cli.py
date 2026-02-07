@@ -25,27 +25,16 @@ def main():
 
 @main.command()
 @click.argument("data_path", type=click.Path(exists=True))
+@click.option("-s", "--schema", type=click.Path(exists=True), help="Schema 文件路径")
+@click.option("-o", "--output", type=click.Path(), help="报告输出路径")
 @click.option(
-    "-s", "--schema",
-    type=click.Path(exists=True),
-    help="Schema 文件路径"
-)
-@click.option(
-    "-o", "--output",
-    type=click.Path(),
-    help="报告输出路径"
-)
-@click.option(
-    "-f", "--format",
-    type=click.Choice(["markdown", "json"]),
-    default="markdown",
-    help="报告格式"
+    "-f", "--format", type=click.Choice(["markdown", "json"]), default="markdown", help="报告格式"
 )
 @click.option(
     "--ruleset",
     type=click.Choice(["default", "sft", "preference"]),
     default="default",
-    help="规则集"
+    help="规则集",
 )
 def check(
     data_path: str,
@@ -102,20 +91,11 @@ def check(
 @main.command()
 @click.argument("analysis_dir", type=click.Path(exists=True))
 @click.option(
-    "-d", "--data",
-    type=click.Path(exists=True),
-    help="数据文件路径 (默认: 合成数据或样例数据)"
+    "-d", "--data", type=click.Path(exists=True), help="数据文件路径 (默认: 合成数据或样例数据)"
 )
+@click.option("-o", "--output", type=click.Path(), help="报告输出路径")
 @click.option(
-    "-o", "--output",
-    type=click.Path(),
-    help="报告输出路径"
-)
-@click.option(
-    "-f", "--format",
-    type=click.Choice(["markdown", "json"]),
-    default="markdown",
-    help="报告格式"
+    "-f", "--format", type=click.Choice(["markdown", "json"]), default="markdown", help="报告格式"
 )
 def validate(
     analysis_dir: str,
@@ -156,11 +136,7 @@ def validate(
 
 @main.command()
 @click.argument("files", nargs=-1, type=click.Path(exists=True), required=True)
-@click.option(
-    "-o", "--output",
-    type=click.Path(),
-    help="对比报告输出路径"
-)
+@click.option("-o", "--output", type=click.Path(), help="对比报告输出路径")
 def compare(files: tuple, output: Optional[str]):
     """对比多个数据文件的分布
 
@@ -183,11 +159,13 @@ def compare(files: tuple, output: Optional[str]):
         checker = DataChecker()
         result = checker.check(samples, {})
 
-        distributions.append({
-            "file": str(file_path),
-            "sample_count": len(samples),
-            "distribution": result.distribution,
-        })
+        distributions.append(
+            {
+                "file": str(file_path),
+                "sample_count": len(samples),
+                "distribution": result.distribution,
+            }
+        )
 
     # Build comparison report
     report_lines = [
@@ -219,10 +197,14 @@ def compare(files: tuple, output: Optional[str]):
 
             if "length_stats" in field_data:
                 stats = field_data["length_stats"]
-                report_lines.append(f"- **{file_name}**: 长度 {stats['min']}-{stats['max']} (平均 {stats['avg']:.0f})")
+                report_lines.append(
+                    f"- **{file_name}**: 长度 {stats['min']}-{stats['max']} (平均 {stats['avg']:.0f})"
+                )
             elif "value_stats" in field_data:
                 stats = field_data["value_stats"]
-                report_lines.append(f"- **{file_name}**: 值 {stats['min']}-{stats['max']} (平均 {stats['avg']:.1f})")
+                report_lines.append(
+                    f"- **{file_name}**: 值 {stats['min']}-{stats['max']} (平均 {stats['avg']:.1f})"
+                )
 
         report_lines.append("")
 
