@@ -178,7 +178,7 @@ class QualityReport:
             "",
             "---",
             "",
-            "*报告由 DataCheck 自动生成*",
+            "> 报告由 DataCheck 自动生成",
         ])
 
         return "\n".join(lines)

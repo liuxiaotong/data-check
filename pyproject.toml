@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "datacheck"
+name = "knowlyr-datacheck"
 version = "0.1.0"
 description = "数据质检工具 - 自动化质量检查、异常检测、分布分析"
 readme = "README.md"
@@ -33,13 +33,13 @@ stats = ["numpy>=1.20", "scipy>=1.7"]
 llm = ["anthropic>=0.18", "openai>=1.0"]
 mcp = ["mcp>=1.0"]
 dev = ["pytest", "ruff"]
-all = ["datacheck[stats,llm,mcp,dev]"]
+all = ["knowlyr-datacheck[stats,llm,mcp,dev]"]
 
 [project.scripts]
-datacheck = "datacheck.cli:main"
+knowlyr-datacheck = "datacheck.cli:main"
 
 [project.entry-points."mcp.servers"]
-datacheck = "datacheck.mcp_server:serve"
+knowlyr-datacheck = "datacheck.mcp_server:serve"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/datacheck"]
