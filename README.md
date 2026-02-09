@@ -1,13 +1,16 @@
 <div align="center">
 
-# DataCheck
+<h1>✅ DataCheck</h1>
 
-**数据质检工具 — 自动化质量检查、异常检测、分布分析**
-**Automated quality checks, anomaly detection & distribution analysis for LLM datasets**
+<p><strong>数据质检工具 — 自动化质量检查、异常检测、分布分析</strong><br/>
+<em>Automated quality checks, anomaly detection & distribution analysis for LLM datasets</em></p>
 
 [![PyPI](https://img.shields.io/pypi/v/knowlyr-datacheck?color=blue)](https://pypi.org/project/knowlyr-datacheck/)
+[![Downloads](https://img.shields.io/pypi/dm/knowlyr-datacheck?color=green)](https://pypi.org/project/knowlyr-datacheck/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+<br/>
+[![CI](https://github.com/liuxiaotong/data-check/actions/workflows/ci.yml/badge.svg)](https://github.com/liuxiaotong/data-check/actions/workflows/ci.yml)
 [![MCP](https://img.shields.io/badge/MCP-7_Tools-purple.svg)](#mcp-server)
 
 [快速开始](#快速开始) · [质量规则](#质量规则) · [异常检测](#异常检测--anomaly-detection) · [Watch 模式](#watch-模式--watch-mode) · [Schema 推断](#schema-推断--schema-inference) · [数据修复](#数据修复--data-fix) · [报告对比](#报告对比--report-diff) · [LLM 智能检查](#llm-智能检查--llm-quality-check) · [MCP Server](#mcp-server) · [GitHub Actions](#github-actions) · [生态](#data-pipeline-生态)
@@ -16,23 +19,25 @@
 
 ---
 
-**GitHub Topics**: `data-quality`, `anomaly-detection`, `data-validation`, `mcp`, `ai-data-pipeline`
+> 🎯 **9 条内置规则** 必填 · 非空 · 格式 · 长度 · 重复 · PII · 乱码 · 重复文本 · 语言一致性
+> ⚡ **异常检测** IQR / Z-score 自动检测数值和长度异常值
+> 🔧 **数据修复** 去重 · 去空白 · PII 脱敏，一键修复常见问题
+> 📊 **多格式报告** Markdown / JSON / HTML 质量报告 + 报告对比 diff
+> 🤖 **LLM 智能检查** Anthropic / OpenAI 评估指令清晰度和回复相关性
 
-自动化数据质量检查，支持规则验证、重复检测、分布分析，生成可读的质量报告。
-
-## 核心能力 / Core Capabilities
+## 核心能力
 
 ```
 数据文件 + Schema → 规则检查 → 异常检测 → 分布分析 → 质量报告
 ```
 
-### 质量仪表盘预览 / Sample Dashboard
+### 质量仪表盘预览
 
 | 通过率 | 评级 | 错误 | 警告 | 重复 | 异常值 |
 |:------:|:----:|:----:|:----:|:----:|:------:|
 | **92%** | 🟢 优秀 | 8 条 | 3 条 | 2 组 | 3 个 |
 
-### 检查项目 / Checks
+### 检查项目
 
 | 检查类型 | 说明 |
 |----------|------|
@@ -48,7 +53,7 @@
 | 🔵 **语言一致性** | 检查文本语言是否一致 (中/英/日/韩/俄/阿拉伯/泰) |
 | 🔵 **LLM 质量评估** | 使用 LLM 评估指令清晰度、回复相关性 |
 
-### 质量评级 / Rating
+### 质量评级
 
 | 通过率 | 评级 | 建议 |
 |--------|------|------|
@@ -57,13 +62,14 @@
 | ≥50% | 🟠 一般 | 需要处理错误 |
 | <50% | 🔴 需改进 | 严重质量问题 |
 
-## 安装 / Installation
+## 安装
 
 ```bash
 pip install knowlyr-datacheck
 ```
 
-可选依赖：
+<details>
+<summary>📦 可选依赖</summary>
 
 ```bash
 pip install knowlyr-datacheck[stats]    # 统计分析 (numpy, scipy)
@@ -74,9 +80,11 @@ pip install knowlyr-datacheck[watch]    # Watch 模式 (watchdog)
 pip install knowlyr-datacheck[all]      # 全部功能
 ```
 
-## 快速开始 / Quick Start
+</details>
 
-### 检查数据文件 / CLI
+## 快速开始
+
+### 检查数据文件
 
 ```bash
 # 基础检查 (支持 JSON / JSONL / CSV)
@@ -124,7 +132,7 @@ knowlyr-datacheck check data.json --ruleset llm
 knowlyr-datacheck check data.json --ruleset llm --llm-provider openai
 ```
 
-### 在 Python 中接入 / Python SDK
+### 在 Python 中接入
 
 ```python
 from datacheck import DataChecker, QualityReport
@@ -159,7 +167,7 @@ report.save("./report.md")
 
 </details>
 
-### 使用 DataRecipe 分析结果验证 / Validate DataRecipe Outputs
+### 使用 DataRecipe 分析结果验证
 
 ```bash
 # 验证合成数据
@@ -191,9 +199,9 @@ knowlyr-datacheck validate ./analysis_output/my_dataset/ -d custom_data.json
 
 ---
 
-## 质量规则 / Quality Rules
+## 质量规则
 
-### 内置规则 / Built-in Rules
+### 内置规则
 
 ```bash
 # 查看所有规则
@@ -212,7 +220,7 @@ knowlyr-datacheck rules
 | `repetitive_text` | 重复文本检测 | 🟡 警告 | 检测文本内过度重复 |
 | `language_consistency` | 语言一致性 | 🔵 提示 | 多语言检测 (中/英/日/韩/俄/阿拉伯/泰) |
 
-### 预设规则集 / Rule Packs
+### 预设规则集
 
 ```bash
 # 使用 SFT 数据规则集
@@ -229,7 +237,10 @@ knowlyr-datacheck check data.json --ruleset preference
 | `preference` | 偏好数据专用规则 (chosen/rejected 差异) |
 | `llm` | LLM 质量评估 (需要 `knowlyr-datacheck[llm]`) |
 
-### 自定义规则配置 / Custom Rules (YAML)
+<details>
+<summary>📝 自定义规则 (YAML)</summary>
+
+### 自定义规则配置 (YAML)
 
 通过 YAML 配置文件定义自定义规则，无需写 Python 代码：
 
@@ -267,9 +278,11 @@ knowlyr-datacheck check data.json --rules-file rules.yaml
 
 > 需要安装 YAML 支持：`pip install knowlyr-datacheck[yaml]`
 
+</details>
+
 ---
 
-## 异常检测 / Anomaly Detection
+## 异常检测
 
 自动检测数值和字符串长度中的异常值，基于 IQR (四分位距) 方法：
 
@@ -304,7 +317,7 @@ for field, info in anomalies.items():
 
 ---
 
-## Watch 模式 / Watch Mode
+## Watch 模式
 
 监视数据文件或目录，文件变更时自动重新检查：
 
@@ -330,7 +343,7 @@ knowlyr-datacheck watch ./data/ --debounce 3 --ruleset sft
 
 ---
 
-## Schema 推断 / Schema Inference
+## Schema 推断
 
 自动从数据文件推断字段类型、约束和必填项：
 
@@ -374,7 +387,7 @@ knowlyr-datacheck infer data.jsonl -o schema.json
 
 ---
 
-## 数据修复 / Data Fix
+## 数据修复
 
 自动修复常见数据质量问题：
 
@@ -400,7 +413,7 @@ knowlyr-datacheck fix data.jsonl -o fixed.jsonl --no-dedup --no-trim
 
 ---
 
-## 分布分析 / Distribution Analysis
+## 分布分析
 
 ### 对比多个数据文件
 
@@ -443,7 +456,7 @@ knowlyr-datacheck compare seed.json synthetic.json -o comparison.md
 
 ---
 
-## 报告对比 / Report Diff
+## 报告对比
 
 对比两次质检报告，追踪数据质量变化：
 
@@ -477,7 +490,7 @@ knowlyr-datacheck diff report_v1.json report_v2.json -o diff.md
 
 ---
 
-## LLM 智能检查 / LLM Quality Check
+## LLM 智能检查
 
 使用 LLM (Anthropic Claude / OpenAI GPT) 智能评估样本质量：
 
@@ -507,6 +520,9 @@ knowlyr-datacheck check data.json --ruleset llm --llm-model claude-sonnet-4-5-20
 
 在 Claude Desktop / Claude Code 中直接使用。
 
+<details>
+<summary>⚙️ 配置</summary>
+
 ### 配置
 
 添加到 `~/Library/Application Support/Claude/claude_desktop_config.json`：
@@ -521,6 +537,8 @@ knowlyr-datacheck check data.json --ruleset llm --llm-model claude-sonnet-4-5-20
   }
 }
 ```
+
+</details>
 
 ### 可用工具
 
@@ -552,6 +570,9 @@ Claude: [调用 check_data_quality]
 
 ---
 
+<details>
+<summary>🔄 GitHub Actions</summary>
+
 ## GitHub Actions
 
 在 CI/CD 中自动检查数据质量。复制模板到你的仓库：
@@ -571,11 +592,38 @@ cp examples/github-actions/data-quality.yml .github/workflows/
 
 > 模板文件: [`examples/github-actions/data-quality.yml`](examples/github-actions/data-quality.yml)
 
+</details>
+
+---
+
+<details>
+<summary>🪝 pre-commit Hook</summary>
+
+## pre-commit Hook
+
+在提交前自动检查数据文件质量：
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/liuxiaotong/data-check
+    rev: v0.3.0
+    hooks:
+      - id: datacheck
+```
+
+自动对 `.json`、`.jsonl`、`.csv` 文件运行质量检查。
+
+</details>
+
 ---
 
 ## Data Pipeline 生态
 
 DataCheck 是 Data Pipeline 生态的质检组件：
+
+<details>
+<summary>🗺️ 生态架构图</summary>
 
 ```mermaid
 graph LR
@@ -591,6 +639,8 @@ graph LR
     Recorder --> Reward["⭐ Reward<br/>过程打分"]
     style Check fill:#0969da,color:#fff,stroke:#0969da
 ```
+
+</details>
 
 ### 生态项目
 
@@ -620,6 +670,9 @@ knowlyr-datasynth generate ./output/tencent_CL-bench/ -n 1000
 knowlyr-datacheck validate ./output/tencent_CL-bench/
 ```
 
+<details>
+<summary>🔌 四合一 MCP 配置</summary>
+
 ### 四合一 MCP 配置
 
 ```json
@@ -645,24 +698,12 @@ knowlyr-datacheck validate ./output/tencent_CL-bench/
 }
 ```
 
----
-
-## pre-commit Hook
-
-在提交前自动检查数据文件质量：
-
-```yaml
-# .pre-commit-config.yaml
-repos:
-  - repo: https://github.com/liuxiaotong/data-check
-    rev: v0.3.0
-    hooks:
-      - id: datacheck
-```
-
-自动对 `.json`、`.jsonl`、`.csv` 文件运行质量检查。
+</details>
 
 ---
+
+<details>
+<summary>📖 命令参考</summary>
 
 ## 命令参考
 
@@ -691,7 +732,12 @@ repos:
 | `knowlyr-datacheck watch <path> --debounce 3` | 自定义防抖时间 (秒) |
 | `knowlyr-datacheck rules` | 列出所有规则 |
 
+</details>
+
 ---
+
+<details>
+<summary>🐍 Python API</summary>
 
 ## API 使用
 
@@ -740,7 +786,12 @@ checker = DataChecker(ruleset)
 result = checker.check_file("data.json")
 ```
 
+</details>
+
 ---
+
+<details>
+<summary>🏗️ 项目架构</summary>
 
 ## 项目架构
 
@@ -756,6 +807,26 @@ src/datacheck/
 ├── cli.py            # CLI 命令行 (check/infer/fix/diff/validate/compare/watch/rules)
 └── mcp_server.py     # MCP Server (7 工具)
 ```
+
+</details>
+
+---
+
+## 开发
+
+```bash
+# 安装开发依赖
+pip install -e ".[all,dev]"
+
+# 运行测试
+pytest
+
+# 代码格式化 + lint
+ruff check src/
+ruff format src/
+```
+
+**CI**: GitHub Actions，支持 Python 3.10+。Tag push 自动发布 PyPI + GitHub Release。
 
 ---
 
