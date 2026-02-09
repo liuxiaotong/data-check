@@ -426,5 +426,5 @@ src/datacheck/
 [MIT](LICENSE)
 
 <div align="center">
-<sub>为数据团队提供自动化质量保障</sub>
+<sub><a href="https://github.com/liuxiaotong">knowlyr</a> 数据工程生态 · 自动化数据质检</sub>
 </div>
