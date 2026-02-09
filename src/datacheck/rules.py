@@ -164,6 +164,122 @@ class RuleSet:
             )
         )
 
+        # Text quality rules
+        from datacheck.text_rules import check_pii, check_garbled_text, check_repetitive_text
+
+        self.add_rule(
+            Rule(
+                id="pii_detection",
+                name="隐私信息检测",
+                description="检查是否包含邮箱、手机号、身份证号等隐私信息",
+                severity=Severity.WARNING,
+                check_fn=check_pii,
+            )
+        )
+
+        self.add_rule(
+            Rule(
+                id="garbled_text",
+                name="乱码检测",
+                description="检查是否包含乱码或异常字符",
+                severity=Severity.WARNING,
+                check_fn=check_garbled_text,
+            )
+        )
+
+        self.add_rule(
+            Rule(
+                id="repetitive_text",
+                name="重复文本检测",
+                description="检查文本中是否存在过度重复内容",
+                severity=Severity.WARNING,
+                check_fn=check_repetitive_text,
+            )
+        )
+
+    @classmethod
+    def from_config(cls, config_path: str) -> "RuleSet":
+        """Load rules from a YAML configuration file.
+
+        Requires PyYAML: pip install knowlyr-datacheck[yaml]
+        """
+        try:
+            import yaml
+        except ImportError:
+            raise ImportError("YAML 支持需要 PyYAML。请运行: pip install knowlyr-datacheck[yaml]")
+
+        from pathlib import Path
+
+        config_path = Path(config_path)
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+
+        ruleset = cls(name=config.get("name", config_path.stem))
+
+        for i, rule_def in enumerate(config.get("rules", [])):
+            field_name = rule_def["field"]
+            check_type = rule_def["check"]
+            severity = Severity(rule_def.get("severity", "warning"))
+            enabled = rule_def.get("enabled", True)
+            rule_id = f"config_{field_name}_{check_type}_{i}"
+
+            check_fn = cls._build_config_check_fn(field_name, check_type, rule_def)
+
+            ruleset.add_rule(Rule(
+                id=rule_id,
+                name=rule_def.get("message", f"{field_name} {check_type} 检查"),
+                description=f"配置文件规则: {field_name} {check_type}",
+                severity=severity,
+                check_fn=check_fn,
+                enabled=enabled,
+            ))
+
+        return ruleset
+
+    @staticmethod
+    def _build_config_check_fn(
+        field_name: str, check_type: str, rule_def: dict
+    ) -> Callable[[Dict[str, Any], Dict[str, Any]], bool]:
+        """Build a check function from config definition."""
+        if check_type == "required":
+            return lambda sample, schema: field_name in sample.get("data", sample)
+
+        elif check_type == "non_empty":
+            def _check(sample, schema):
+                data = sample.get("data", sample)
+                val = data.get(field_name)
+                if val is None:
+                    return False
+                if isinstance(val, str) and len(val.strip()) == 0:
+                    return False
+                return True
+            return _check
+
+        elif check_type == "min_length":
+            min_len = rule_def.get("value", 1)
+            return lambda sample, schema: len(
+                sample.get("data", sample).get(field_name, "")
+            ) >= min_len
+
+        elif check_type == "max_length":
+            max_len = rule_def.get("value", 100000)
+            return lambda sample, schema: len(
+                sample.get("data", sample).get(field_name, "")
+            ) <= max_len
+
+        elif check_type == "regex":
+            pattern = re.compile(rule_def.get("pattern", ".*"))
+            return lambda sample, schema: bool(
+                pattern.search(sample.get("data", sample).get(field_name, ""))
+            )
+
+        elif check_type == "enum":
+            allowed = set(rule_def.get("values", []))
+            return lambda sample, schema: sample.get("data", sample).get(field_name) in allowed
+
+        else:
+            raise ValueError(f"未知的检查类型: {check_type}")
+
     def add_rule(self, rule: Rule):
         """Add a rule to the set."""
         self.rules[rule.id] = rule

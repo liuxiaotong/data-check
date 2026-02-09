@@ -36,6 +36,13 @@ class QualityReport:
             "",
         ]
 
+        # Sampling notice
+        if self.result.sampled:
+            lines.extend([
+                f"> **注意**: 本报告基于抽样检查 ({self.result.sampled_count}/{self.result.original_count} 样本)",
+                "",
+            ])
+
         # Quality score visualization
         score = self.result.pass_rate * 100
         if score >= 90:
@@ -115,6 +122,27 @@ class QualityReport:
 
             if len(self.result.duplicates) > 10:
                 lines.append(f"\n(还有 {len(self.result.duplicates) - 10} 组...)")
+
+            lines.append("")
+
+        # Near-duplicates
+        if self.result.near_duplicates:
+            lines.extend(
+                [
+                    "---",
+                    "",
+                    "## 近似重复检测",
+                    "",
+                    f"发现 **{len(self.result.near_duplicates)}** 组近似重复数据:",
+                    "",
+                ]
+            )
+
+            for i, dup_group in enumerate(self.result.near_duplicates[:10], 1):
+                lines.append(f"{i}. {', '.join(dup_group)}")
+
+            if len(self.result.near_duplicates) > 10:
+                lines.append(f"\n(还有 {len(self.result.near_duplicates) - 10} 组...)")
 
             lines.append("")
 
@@ -204,20 +232,30 @@ class QualityReport:
 
     def to_json(self) -> Dict[str, Any]:
         """Generate JSON report."""
+        summary = {
+            "total_samples": self.result.total_samples,
+            "passed_samples": self.result.passed_samples,
+            "failed_samples": self.result.failed_samples,
+            "pass_rate": self.result.pass_rate,
+            "error_count": self.result.error_count,
+            "warning_count": self.result.warning_count,
+            "info_count": self.result.info_count,
+        }
+
+        if self.result.sampled:
+            summary["sampling"] = {
+                "enabled": True,
+                "sampled_count": self.result.sampled_count,
+                "original_count": self.result.original_count,
+            }
+
         return {
             "title": self.title,
             "generated_at": datetime.now().isoformat(),
-            "summary": {
-                "total_samples": self.result.total_samples,
-                "passed_samples": self.result.passed_samples,
-                "failed_samples": self.result.failed_samples,
-                "pass_rate": self.result.pass_rate,
-                "error_count": self.result.error_count,
-                "warning_count": self.result.warning_count,
-                "info_count": self.result.info_count,
-            },
+            "summary": summary,
             "rule_results": self.result.rule_results,
             "duplicates": self.result.duplicates,
+            "near_duplicates": self.result.near_duplicates,
             "distribution": self.result.distribution,
             "failed_sample_ids": self.result.failed_sample_ids,
         }

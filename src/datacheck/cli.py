@@ -1,6 +1,5 @@
 """DataCheck CLI - 命令行界面."""
 
-import json
 import sys
 from pathlib import Path
 from typing import Optional
@@ -36,19 +35,31 @@ def main():
     default="default",
     help="规则集",
 )
+@click.option("--rules-file", type=click.Path(exists=True), default=None, help="自定义规则配置文件 (YAML)")
+@click.option("--sample", type=int, default=None, help="随机抽样数量")
+@click.option("--sample-rate", type=float, default=None, help="随机抽样比例 (0-1)")
+@click.option("--threshold", type=float, default=0.5, show_default=True, help="最低通过率阈值，低于此值退出码为 1")
+@click.option("--strict", is_flag=True, default=False, help="严格模式: 任何错误或警告都返回退出码 1")
 def check(
     data_path: str,
     schema: Optional[str],
     output: Optional[str],
     format: str,
     ruleset: str,
+    rules_file: Optional[str],
+    sample: Optional[int],
+    sample_rate: Optional[float],
+    threshold: float,
+    strict: bool,
 ):
     """检查数据文件质量
 
-    DATA_PATH: 数据 JSON 文件路径
+    DATA_PATH: 数据文件路径 (JSON/JSONL/CSV)
     """
     # Select ruleset
-    if ruleset == "sft":
+    if rules_file:
+        rules = RuleSet.from_config(rules_file)
+    elif ruleset == "sft":
         rules = get_sft_ruleset()
     elif ruleset == "preference":
         rules = get_preference_ruleset()
@@ -59,7 +70,7 @@ def check(
 
     click.echo(f"正在检查 {data_path}...")
 
-    result = checker.check_file(data_path, schema)
+    result = checker.check_file(data_path, schema, sample_count=sample, sample_rate=sample_rate)
 
     if not result.success:
         click.echo(f"✗ 检查失败: {result.error}", err=True)
@@ -75,6 +86,10 @@ def check(
     # Print summary
     report.print_summary()
 
+    # Show sampling notice
+    if result.sampled:
+        click.echo(f"  抽样检查: {result.sampled_count}/{result.original_count} 样本")
+
     # Show issues
     if result.error_count > 0:
         click.echo(f"🔴 错误: {result.error_count}")
@@ -83,8 +98,12 @@ def check(
     if result.duplicates:
         click.echo(f"⚠️  重复: {len(result.duplicates)} 组")
 
-    # Exit with error if pass rate is too low
-    if result.pass_rate < 0.5:
+    # Exit with error based on threshold / strict mode
+    if strict and (result.error_count > 0 or result.warning_count > 0):
+        click.echo("严格模式: 检测到错误或警告，退出码 1")
+        sys.exit(1)
+    if result.pass_rate < threshold:
+        click.echo(f"通过率 {result.pass_rate:.1%} 低于阈值 {threshold:.1%}，退出码 1")
         sys.exit(1)
 
 
@@ -97,11 +116,15 @@ def check(
 @click.option(
     "-f", "--format", type=click.Choice(["markdown", "json"]), default="markdown", help="报告格式"
 )
+@click.option("--threshold", type=float, default=0.5, show_default=True, help="最低通过率阈值，低于此值退出码为 1")
+@click.option("--strict", is_flag=True, default=False, help="严格模式: 任何错误或警告都返回退出码 1")
 def validate(
     analysis_dir: str,
     data: Optional[str],
     output: Optional[str],
     format: str,
+    threshold: float,
+    strict: bool,
 ):
     """使用 DataRecipe 分析结果验证数据
 
@@ -133,6 +156,14 @@ def validate(
     # Print summary
     report.print_summary()
 
+    # Exit with error based on threshold / strict mode
+    if strict and (result.error_count > 0 or result.warning_count > 0):
+        click.echo("严格模式: 检测到错误或警告，退出码 1")
+        sys.exit(1)
+    if result.pass_rate < threshold:
+        click.echo(f"通过率 {result.pass_rate:.1%} 低于阈值 {threshold:.1%}，退出码 1")
+        sys.exit(1)
+
 
 @main.command()
 @click.argument("files", nargs=-1, type=click.Path(exists=True), required=True)
@@ -151,12 +182,8 @@ def compare(files: tuple, output: Optional[str]):
     distributions = []
 
     for file_path in files:
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        samples = data.get("samples", data.get("responses", data if isinstance(data, list) else []))
-
         checker = DataChecker()
+        samples, _ = checker._load_data(Path(file_path))
         result = checker.check(samples, {})
 
         distributions.append(

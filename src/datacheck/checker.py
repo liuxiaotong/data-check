@@ -1,12 +1,14 @@
 """Core data quality checker."""
 
+import csv
 import json
 import hashlib
+import random
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from datacheck.rules import RuleSet, Severity
 
@@ -28,6 +30,10 @@ class CheckResult:
     failed_sample_ids: List[str] = field(default_factory=list)
     duplicates: List[List[str]] = field(default_factory=list)
     distribution: Dict[str, Any] = field(default_factory=dict)
+    near_duplicates: List[List[str]] = field(default_factory=list)
+    sampled: bool = False
+    sampled_count: int = 0
+    original_count: int = 0
 
 
 class DataChecker:
@@ -127,6 +133,11 @@ class DataChecker:
         if result.duplicates:
             result.warning_count += len(result.duplicates)
 
+        # Check for near-duplicates
+        result.near_duplicates = self._find_near_duplicates(samples)
+        if result.near_duplicates:
+            result.warning_count += len(result.near_duplicates)
+
         # Compute distribution
         result.distribution = self._compute_distribution(samples, schema)
 
@@ -138,18 +149,59 @@ class DataChecker:
 
         return result
 
+    @staticmethod
+    def _load_data(data_path: Path) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Load data from file, detecting format by extension.
+
+        Supports .json, .jsonl, .csv formats.
+
+        Returns:
+            (samples, schema) tuple
+        """
+        suffix = data_path.suffix.lower()
+
+        if suffix == ".jsonl":
+            samples = []
+            with open(data_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        samples.append(json.loads(line))
+            return samples, {}
+
+        elif suffix == ".csv":
+            with open(data_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                samples = list(reader)
+            return samples, {}
+
+        else:  # .json default
+            with open(data_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if isinstance(data, list):
+                return data, {}
+
+            samples = data.get("samples", data.get("responses", []))
+            schema = data.get("schema", {})
+            return samples, schema
+
     def check_file(
         self,
         data_path: str,
         schema_path: Optional[str] = None,
         output_path: Optional[str] = None,
+        sample_count: Optional[int] = None,
+        sample_rate: Optional[float] = None,
     ) -> CheckResult:
         """Check a data file.
 
         Args:
-            data_path: Path to data JSON file
+            data_path: Path to data file (JSON/JSONL/CSV)
             schema_path: Path to schema JSON file (optional)
             output_path: Path to save report (optional)
+            sample_count: Random sample N items (optional)
+            sample_rate: Random sample ratio 0-1 (optional)
 
         Returns:
             CheckResult
@@ -157,25 +209,35 @@ class DataChecker:
         data_path = Path(data_path)
 
         # Load data
-        with open(data_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Extract samples
-        if isinstance(data, list):
-            samples = data
-        else:
-            samples = data.get("samples", data.get("responses", []))
+        samples, embedded_schema = self._load_data(data_path)
 
         # Load schema
         schema = {}
         if schema_path:
             with open(schema_path, "r", encoding="utf-8") as f:
                 schema = json.load(f)
-        elif "schema" in data:
-            schema = data["schema"]
+        elif embedded_schema:
+            schema = embedded_schema
+
+        # Sampling
+        original_count = len(samples)
+        sampled = False
+
+        if sample_count is not None and sample_count < len(samples):
+            samples = random.sample(samples, sample_count)
+            sampled = True
+        elif sample_rate is not None and 0 < sample_rate < 1.0:
+            k = max(1, int(len(samples) * sample_rate))
+            samples = random.sample(samples, k)
+            sampled = True
 
         # Run check
         result = self.check(samples, schema)
+
+        if sampled:
+            result.sampled = True
+            result.sampled_count = len(samples)
+            result.original_count = original_count
 
         # Save report if output path provided
         if output_path:
@@ -256,6 +318,43 @@ class DataChecker:
         # Find duplicates
         duplicates = [ids for ids in hash_to_ids.values() if len(ids) > 1]
         return duplicates
+
+    def _find_near_duplicates(
+        self, samples: List[Dict[str, Any]], threshold: float = 0.8
+    ) -> List[List[str]]:
+        """Find near-duplicate samples using n-gram Jaccard similarity."""
+        from datacheck.text_rules import compute_ngrams, jaccard_similarity
+
+        if len(samples) > 5000:
+            return []
+
+        sample_ngrams = []
+        for i, sample in enumerate(samples):
+            sample_id = sample.get("id", f"sample_{i}")
+            data = sample.get("data", sample)
+            text = " ".join(str(v) for v in data.values() if isinstance(v, str))
+            ngrams = compute_ngrams(text, n=3)
+            sample_ngrams.append((sample_id, ngrams))
+
+        near_dupes = []
+        seen: set = set()
+
+        for i in range(len(sample_ngrams)):
+            if sample_ngrams[i][0] in seen:
+                continue
+            group = [sample_ngrams[i][0]]
+            for j in range(i + 1, len(sample_ngrams)):
+                if sample_ngrams[j][0] in seen:
+                    continue
+                sim = jaccard_similarity(sample_ngrams[i][1], sample_ngrams[j][1])
+                if sim >= threshold:
+                    group.append(sample_ngrams[j][0])
+                    seen.add(sample_ngrams[j][0])
+            if len(group) > 1:
+                near_dupes.append(group)
+                seen.add(sample_ngrams[i][0])
+
+        return near_dupes
 
     def _compute_distribution(
         self,

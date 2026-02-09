@@ -1,6 +1,5 @@
 """DataCheck MCP Server - Model Context Protocol 服务."""
 
-import json
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -31,13 +30,13 @@ def create_server() -> "Server":
         return [
             Tool(
                 name="check_data_quality",
-                description="检查数据文件的质量",
+                description="检查数据文件的质量 (支持 JSON/JSONL/CSV)",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "data_path": {
                             "type": "string",
-                            "description": "数据 JSON 文件路径",
+                            "description": "数据文件路径 (JSON/JSONL/CSV)",
                         },
                         "schema_path": {
                             "type": "string",
@@ -47,6 +46,14 @@ def create_server() -> "Server":
                             "type": "string",
                             "enum": ["default", "sft", "preference"],
                             "description": "规则集（默认: default）",
+                        },
+                        "sample_count": {
+                            "type": "integer",
+                            "description": "随机抽样数量（可选）",
+                        },
+                        "sample_rate": {
+                            "type": "number",
+                            "description": "随机抽样比例 0-1（可选）",
                         },
                     },
                     "required": ["data_path"],
@@ -72,14 +79,14 @@ def create_server() -> "Server":
             ),
             Tool(
                 name="compare_distributions",
-                description="对比多个数据文件的分布",
+                description="对比多个数据文件的分布 (支持 JSON/JSONL/CSV)",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "file_paths": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "要对比的数据文件路径列表",
+                            "description": "要对比的数据文件路径列表 (JSON/JSONL/CSV)",
                         },
                     },
                     "required": ["file_paths"],
@@ -112,6 +119,8 @@ def create_server() -> "Server":
             result = checker.check_file(
                 arguments["data_path"],
                 arguments.get("schema_path"),
+                sample_count=arguments.get("sample_count"),
+                sample_rate=arguments.get("sample_rate"),
             )
 
             if not result.success:
@@ -210,13 +219,8 @@ def create_server() -> "Server":
 
             distributions = []
             for file_path in file_paths:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                samples = data.get(
-                    "samples", data.get("responses", data if isinstance(data, list) else [])
-                )
                 checker = DataChecker()
+                samples, _ = checker._load_data(Path(file_path))
                 result = checker.check(samples, {})
 
                 distributions.append(

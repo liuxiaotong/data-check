@@ -1,5 +1,7 @@
 """Tests for DataChecker."""
 
+import json
+
 import pytest
 
 from datacheck.checker import DataChecker
@@ -105,6 +107,102 @@ class TestDataChecker:
             assert "name" in rule_data
             assert "passed" in rule_data
             assert "failed" in rule_data
+
+
+class TestFileLoading:
+    """Tests for file loading (JSON/JSONL/CSV)."""
+
+    def test_load_jsonl(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        lines = [
+            json.dumps({"instruction": "Q1", "response": "A1"}),
+            json.dumps({"instruction": "Q2", "response": "A2"}),
+        ]
+        path.write_text("\n".join(lines), encoding="utf-8")
+
+        checker = DataChecker()
+        result = checker.check_file(str(path))
+        assert result.total_samples == 2
+
+    def test_load_jsonl_with_blank_lines(self, tmp_path):
+        path = tmp_path / "data.jsonl"
+        lines = [
+            json.dumps({"instruction": "Q1", "response": "A1"}),
+            "",
+            json.dumps({"instruction": "Q2", "response": "A2"}),
+            "",
+        ]
+        path.write_text("\n".join(lines), encoding="utf-8")
+
+        checker = DataChecker()
+        result = checker.check_file(str(path))
+        assert result.total_samples == 2
+
+    def test_load_csv(self, tmp_path):
+        path = tmp_path / "data.csv"
+        path.write_text(
+            "instruction,response\nWhat is AI?,AI is...\nExplain ML,ML is...\n",
+            encoding="utf-8",
+        )
+
+        checker = DataChecker()
+        result = checker.check_file(str(path))
+        assert result.total_samples == 2
+
+    def test_load_json_list(self, tmp_path):
+        path = tmp_path / "data.json"
+        data = [{"instruction": "Q1", "response": "A1"}]
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        checker = DataChecker()
+        result = checker.check_file(str(path))
+        assert result.total_samples == 1
+
+    def test_load_json_with_samples_key(self, tmp_path):
+        path = tmp_path / "data.json"
+        data = {"samples": [{"instruction": "Q1", "response": "A1"}]}
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        checker = DataChecker()
+        result = checker.check_file(str(path))
+        assert result.total_samples == 1
+
+
+class TestSampling:
+    """Tests for sampling mode."""
+
+    def test_sample_count(self, tmp_path):
+        path = tmp_path / "data.json"
+        samples = [{"instruction": f"Q{i}", "response": f"A{i}"} for i in range(100)]
+        path.write_text(json.dumps(samples), encoding="utf-8")
+
+        checker = DataChecker()
+        result = checker.check_file(str(path), sample_count=10)
+        assert result.sampled is True
+        assert result.sampled_count == 10
+        assert result.original_count == 100
+        assert result.total_samples == 10
+
+    def test_sample_rate(self, tmp_path):
+        path = tmp_path / "data.json"
+        samples = [{"instruction": f"Q{i}", "response": f"A{i}"} for i in range(100)]
+        path.write_text(json.dumps(samples), encoding="utf-8")
+
+        checker = DataChecker()
+        result = checker.check_file(str(path), sample_rate=0.1)
+        assert result.sampled is True
+        assert result.sampled_count == 10
+        assert result.original_count == 100
+
+    def test_no_sampling_when_count_exceeds(self, tmp_path):
+        path = tmp_path / "data.json"
+        samples = [{"instruction": f"Q{i}", "response": f"A{i}"} for i in range(5)]
+        path.write_text(json.dumps(samples), encoding="utf-8")
+
+        checker = DataChecker()
+        result = checker.check_file(str(path), sample_count=100)
+        assert result.sampled is False
+        assert result.total_samples == 5
 
 
 class TestRuleSet:
