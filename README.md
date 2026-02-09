@@ -47,7 +47,10 @@
 | 🔴 **非空检查** | 检查关键字段是否为空 |
 | 🔴 **格式检查** | 检查数据类型是否正确 |
 | 🟡 **长度边界** | 检查文本长度是否合理 |
-| 🟡 **重复检测** | 检测重复样本 |
+| 🟡 **重复检测** | 检测完全重复 + 近似重复 (n-gram Jaccard) |
+| 🟡 **隐私信息 (PII)** | 检测邮箱、手机号、身份证号 |
+| 🟡 **乱码检测** | 检测乱码、异常字符、编码错误 |
+| 🟡 **重复文本** | 检测文本内过度重复内容 |
 | 🔵 **语言一致性** | 检查文本语言是否一致 |
 
 ### 质量评级 / Rating
@@ -70,6 +73,7 @@ pip install knowlyr-datacheck
 ```bash
 pip install knowlyr-datacheck[stats]    # 统计分析 (numpy, scipy)
 pip install knowlyr-datacheck[mcp]      # MCP 服务器
+pip install knowlyr-datacheck[yaml]     # YAML 规则配置
 pip install knowlyr-datacheck[all]      # 全部功能
 ```
 
@@ -78,14 +82,24 @@ pip install knowlyr-datacheck[all]      # 全部功能
 ### 检查数据文件 / CLI
 
 ```bash
-# 基础检查
+# 基础检查 (支持 JSON / JSONL / CSV)
 knowlyr-datacheck check data.json
+knowlyr-datacheck check data.jsonl
+knowlyr-datacheck check data.csv
 
 # 指定 Schema
 knowlyr-datacheck check data.json -s schema.json
 
 # 输出报告
 knowlyr-datacheck check data.json -o report.md
+
+# 采样检查 (大数据集)
+knowlyr-datacheck check data.jsonl --sample 1000
+knowlyr-datacheck check data.jsonl --sample-rate 0.1
+
+# CI 集成: 自定义阈值
+knowlyr-datacheck check data.json --threshold 0.9
+knowlyr-datacheck check data.json --strict
 ```
 
 ### 在 Python 中接入 / Python SDK
@@ -93,11 +107,11 @@ knowlyr-datacheck check data.json -o report.md
 ```python
 from datacheck import DataChecker, QualityReport
 
-checker = DataChecker(schema_path="schema.json")
-result = checker.check_file("data.json")
+checker = DataChecker()
+result = checker.check_file("data.json", schema_path="schema.json")
 
-report = QualityReport.from_result(result)
-print(report.summary())         # CLI 同款摘要
+report = QualityReport(result)
+report.print_summary()
 report.save("./report.md")
 ```
 
@@ -169,8 +183,11 @@ knowlyr-datacheck rules
 | `required_fields` | 必填字段检查 | 🔴 错误 | 检查必填字段是否存在 |
 | `non_empty` | 非空检查 | 🔴 错误 | 检查关键字段是否为空 |
 | `format_valid` | 格式检查 | 🔴 错误 | 检查数据类型是否正确 |
-| `length_bounds` | 长度边界检查 | 🟡 警告 | 检查文本长度范围 |
 | `score_valid` | 评分有效性 | 🔴 错误 | 检查评分是否在有效范围 |
+| `length_bounds` | 长度边界检查 | 🟡 警告 | 检查文本长度范围 |
+| `pii_detection` | 隐私信息检测 | 🟡 警告 | 检测邮箱、手机号、身份证号 |
+| `garbled_text` | 乱码检测 | 🟡 警告 | 检测乱码、异常字符 |
+| `repetitive_text` | 重复文本检测 | 🟡 警告 | 检测文本内过度重复 |
 | `language_consistency` | 语言一致性 | 🔵 提示 | 检查语言是否一致 |
 
 ### 预设规则集 / Rule Packs
@@ -189,24 +206,43 @@ knowlyr-datacheck check data.json --ruleset preference
 | `sft` | SFT 数据专用规则 (指令质量、回复质量) |
 | `preference` | 偏好数据专用规则 (chosen/rejected 差异) |
 
-### 自定义规则示例 / Custom Rule Example
+### 自定义规则配置 / Custom Rules (YAML)
 
-```python
-# my_rules.py
-from datacheck.rules import register_rule, RuleResult
+通过 YAML 配置文件定义自定义规则，无需写 Python 代码：
 
-@register_rule(id="jsonl_line_length", level="warning")
-def line_length(sample):
-    if len(sample["instruction"]) > 2048:
-        return RuleResult.fail(message="instruction 超出 2048 字符")
-    return RuleResult.pass_()
+```yaml
+# rules.yaml
+rules:
+  - field: instruction
+    check: min_length
+    value: 10
+    severity: error
+
+  - field: response
+    check: max_length
+    value: 10000
+    severity: warning
+
+  - field: category
+    check: enum
+    values: ["qa", "chat", "code", "math"]
+    severity: error
+
+  - field: instruction
+    check: regex
+    pattern: "^[A-Z\u4e00-\u9fff]"
+    severity: info
+    message: "指令应以大写字母或中文开头"
 ```
 
 ```bash
-knowlyr-datacheck check data.json --ruleset custom --extra-rules my_rules.py
+# 使用自定义规则
+knowlyr-datacheck check data.json --rules-file rules.yaml
 ```
 
-> 规则打包：将多个规则放入 `rulesets/my_team.yaml` 并在 CLI 中通过 `--ruleset my_team` 调用，可与团队共享。
+支持的检查类型：`required`、`non_empty`、`min_length`、`max_length`、`regex`、`enum`
+
+> 需要安装 YAML 支持：`pip install knowlyr-datacheck[yaml]`
 
 ---
 
@@ -377,9 +413,14 @@ knowlyr-datacheck validate ./output/tencent_CL-bench/
 
 | 命令 | 功能 |
 |------|------|
-| `knowlyr-datacheck check <file>` | 检查数据文件 |
+| `knowlyr-datacheck check <file>` | 检查数据文件 (JSON/JSONL/CSV) |
 | `knowlyr-datacheck check <file> -s <schema>` | 使用 Schema 检查 |
 | `knowlyr-datacheck check <file> --ruleset sft` | 使用指定规则集 |
+| `knowlyr-datacheck check <file> --rules-file rules.yaml` | 使用自定义 YAML 规则 |
+| `knowlyr-datacheck check <file> --sample 1000` | 随机抽样 1000 条检查 |
+| `knowlyr-datacheck check <file> --sample-rate 0.1` | 随机抽样 10% 检查 |
+| `knowlyr-datacheck check <file> --threshold 0.9` | 通过率低于 90% 时退出码 1 |
+| `knowlyr-datacheck check <file> --strict` | 任何错误/警告都退出码 1 |
 | `knowlyr-datacheck validate <dir>` | 验证 DataRecipe 输出 |
 | `knowlyr-datacheck compare <files...>` | 对比多个文件分布 |
 | `knowlyr-datacheck rules` | 列出所有规则 |
@@ -394,12 +435,18 @@ from datacheck import DataChecker, QualityReport, RuleSet
 # 创建检查器
 checker = DataChecker()
 
-# 检查数据
-result = checker.check(samples, schema)
+# 检查文件 (支持 JSON/JSONL/CSV + 采样)
+result = checker.check_file("data.jsonl", sample_count=1000)
 
 print(f"通过率: {result.pass_rate:.1%}")
 print(f"错误: {result.error_count}")
 print(f"重复: {len(result.duplicates)} 组")
+print(f"近似重复: {len(result.near_duplicates)} 组")
+
+# 使用 YAML 自定义规则
+rules = RuleSet.from_config("rules.yaml")
+checker = DataChecker(rules)
+result = checker.check_file("data.json")
 
 # 生成报告
 report = QualityReport(result)
@@ -412,9 +459,10 @@ report.save("report.md")
 
 ```
 src/datacheck/
-├── checker.py        # 核心检查器
-├── rules.py          # 规则定义和预设
-├── report.py         # 报告生成
+├── checker.py        # 核心检查器 (JSON/JSONL/CSV 加载、采样、近似重复检测)
+├── rules.py          # 规则定义、预设规则集、YAML 配置加载
+├── text_rules.py     # 文本质量规则 (PII、乱码、重复文本、n-gram)
+├── report.py         # 报告生成 (Markdown / JSON)
 ├── cli.py            # CLI 命令行
 └── mcp_server.py     # MCP Server (4 工具)
 ```
