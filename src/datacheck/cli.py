@@ -424,5 +424,114 @@ def diff_cmd(report_a: str, report_b: str, output: Optional[str]):
         click.echo(diff_report)
 
 
+@main.command()
+@click.argument("data_path", type=click.Path(exists=True))
+@click.option("-s", "--schema", type=click.Path(exists=True), help="Schema 文件路径")
+@click.option(
+    "--ruleset",
+    type=click.Choice(["default", "sft", "preference", "llm"]),
+    default="default",
+    help="规则集",
+)
+@click.option("--debounce", type=float, default=2.0, show_default=True, help="防抖秒数")
+def watch(data_path: str, schema: Optional[str], ruleset: str, debounce: float):
+    """监视数据文件/目录，变更时自动重新检查
+
+    DATA_PATH: 数据文件或目录路径
+    """
+    try:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+    except ImportError:
+        click.echo("Watch 模式需要 watchdog。请运行: pip install knowlyr-datacheck[watch]")
+        sys.exit(1)
+
+    import threading
+    from datacheck.checker import SUPPORTED_EXTENSIONS
+
+    # Select ruleset
+    if ruleset == "sft":
+        rules = get_sft_ruleset()
+    elif ruleset == "preference":
+        rules = get_preference_ruleset()
+    elif ruleset == "llm":
+        rules = get_llm_ruleset()
+    else:
+        rules = RuleSet()
+
+    checker = DataChecker(rules)
+    path = Path(data_path)
+    is_dir = path.is_dir()
+
+    def run_check():
+        """Execute a check and print results."""
+        click.echo(f"\n{'─' * 50}")
+        click.echo(f"🔄 检查中... ({path})")
+        try:
+            if is_dir:
+                batch_result = checker.check_directory(str(path), schema_path=schema)
+                report = BatchQualityReport(batch_result)
+                report.print_summary()
+                for fp, fr in batch_result.file_results.items():
+                    status = "✅" if fr.error_count == 0 else "❌"
+                    click.echo(f"  {status} {fp}: {fr.pass_rate:.1%}")
+            else:
+                result = checker.check_file(str(path), schema)
+                report = QualityReport(result)
+                report.print_summary()
+                if result.anomaly_count > 0:
+                    click.echo(f"  🔍 异常值: {result.anomaly_count}")
+        except Exception as e:
+            click.echo(f"  ✗ 检查出错: {e}")
+
+    class DataCheckHandler(FileSystemEventHandler):
+        def __init__(self):
+            self._timer = None
+            self._lock = threading.Lock()
+
+        def on_modified(self, event):
+            if event.is_directory:
+                return
+            if Path(event.src_path).suffix.lower() in SUPPORTED_EXTENSIONS:
+                self._schedule_check()
+
+        def on_created(self, event):
+            if event.is_directory:
+                return
+            if Path(event.src_path).suffix.lower() in SUPPORTED_EXTENSIONS:
+                self._schedule_check()
+
+        def _schedule_check(self):
+            with self._lock:
+                if self._timer:
+                    self._timer.cancel()
+                self._timer = threading.Timer(debounce, run_check)
+                self._timer.start()
+
+    # Initial check
+    click.echo(f"👀 开始监视: {data_path}")
+    click.echo(f"   防抖: {debounce}s | 规则集: {ruleset}")
+    click.echo("   按 Ctrl+C 停止\n")
+    run_check()
+
+    # Start watching
+    handler = DataCheckHandler()
+    observer = Observer()
+
+    if is_dir:
+        observer.schedule(handler, str(path), recursive=True)
+    else:
+        observer.schedule(handler, str(path.parent), recursive=False)
+
+    observer.start()
+    try:
+        while True:
+            observer.join(timeout=1)
+    except KeyboardInterrupt:
+        click.echo("\n\n👋 停止监视")
+        observer.stop()
+    observer.join()
+
+
 if __name__ == "__main__":
     main()

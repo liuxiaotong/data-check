@@ -177,6 +177,30 @@ class QualityReport:
 
                 lines.append("")
 
+        # Anomaly detection
+        if self.result.anomalies:
+            total_anomalies = sum(
+                a["outlier_count"] for a in self.result.anomalies.values()
+            )
+            lines.extend([
+                "---",
+                "",
+                "## 异常检测",
+                "",
+                f"发现 **{total_anomalies}** 个异常值:",
+                "",
+                "| 字段 | 类型 | 异常数 | 正常范围 | 方法 |",
+                "|------|------|--------|----------|------|",
+            ])
+            for field_name, info in self.result.anomalies.items():
+                bounds = info["bounds"]
+                field_type = "数值" if info["field_type"] == "number" else "长度"
+                lines.append(
+                    f"| {field_name} | {field_type} | {info['outlier_count']} "
+                    f"| [{bounds['lower']}, {bounds['upper']}] | {info['method'].upper()} |"
+                )
+            lines.append("")
+
         # Reference comparison
         if "reference_comparison" in self.result.distribution:
             comp = self.result.distribution["reference_comparison"]
@@ -354,6 +378,31 @@ class QualityReport:
                 </table>
             </div>"""
 
+        # Anomaly section
+        anomaly_html = ""
+        if self.result.anomalies:
+            total_anomalies = sum(
+                a["outlier_count"] for a in self.result.anomalies.values()
+            )
+            anomaly_rows = ""
+            for fname, info in self.result.anomalies.items():
+                bounds = info["bounds"]
+                ftype = "数值" if info["field_type"] == "number" else "长度"
+                anomaly_rows += (
+                    f"<tr><td>{fname}</td><td>{ftype}</td>"
+                    f"<td>{info['outlier_count']}</td>"
+                    f"<td>[{bounds['lower']}, {bounds['upper']}]</td>"
+                    f"<td>{info['method'].upper()}</td></tr>"
+                )
+            anomaly_html = f"""
+            <div class="section">
+                <h2>异常检测 ({total_anomalies} 个异常值)</h2>
+                <table>
+                    <tr><th>字段</th><th>类型</th><th>异常数</th><th>正常范围</th><th>方法</th></tr>
+                    {anomaly_rows}
+                </table>
+            </div>"""
+
         return f"""<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -413,6 +462,7 @@ class QualityReport:
   {dupes_html}
   {near_dupes_html}
   {dist_html}
+  {anomaly_html}
 
   <div class="footer">报告由 DataCheck 自动生成</div>
 </div>
@@ -446,6 +496,7 @@ class QualityReport:
             "duplicates": self.result.duplicates,
             "near_duplicates": self.result.near_duplicates,
             "distribution": self.result.distribution,
+            "anomalies": self.result.anomalies,
             "failed_sample_ids": self.result.failed_sample_ids,
         }
 

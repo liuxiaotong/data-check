@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-7_Tools-purple.svg)](#mcp-server)
 
-[快速开始](#快速开始) · [质量规则](#质量规则) · [Schema 推断](#schema-推断--schema-inference) · [数据修复](#数据修复--data-fix) · [报告对比](#报告对比--report-diff) · [LLM 智能检查](#llm-智能检查--llm-quality-check) · [MCP Server](#mcp-server) · [GitHub Actions](#github-actions) · [生态](#data-pipeline-生态)
+[快速开始](#快速开始) · [质量规则](#质量规则) · [异常检测](#异常检测--anomaly-detection) · [Watch 模式](#watch-模式--watch-mode) · [Schema 推断](#schema-推断--schema-inference) · [数据修复](#数据修复--data-fix) · [报告对比](#报告对比--report-diff) · [LLM 智能检查](#llm-智能检查--llm-quality-check) · [MCP Server](#mcp-server) · [GitHub Actions](#github-actions) · [生态](#data-pipeline-生态)
 
 </div>
 
@@ -28,9 +28,9 @@
 
 ### 质量仪表盘预览 / Sample Dashboard
 
-| 通过率 | 评级 | 错误 | 警告 | 重复 |
-|:------:|:----:|:----:|:----:|:----:|
-| **92%** | 🟢 优秀 | 8 条 | 3 条 | 2 组 |
+| 通过率 | 评级 | 错误 | 警告 | 重复 | 异常值 |
+|:------:|:----:|:----:|:----:|:----:|:------:|
+| **92%** | 🟢 优秀 | 8 条 | 3 条 | 2 组 | 3 个 |
 
 ### 检查项目 / Checks
 
@@ -44,6 +44,7 @@
 | 🟡 **隐私信息 (PII)** | 检测邮箱、手机号、身份证号 |
 | 🟡 **乱码检测** | 检测乱码、异常字符、编码错误 |
 | 🟡 **重复文本** | 检测文本内过度重复内容 |
+| 🔵 **统计异常检测** | IQR/Z-score 检测数值和长度异常值 |
 | 🔵 **语言一致性** | 检查文本语言是否一致 (中/英/日/韩/俄/阿拉伯/泰) |
 | 🔵 **LLM 质量评估** | 使用 LLM 评估指令清晰度、回复相关性 |
 
@@ -69,6 +70,7 @@ pip install knowlyr-datacheck[stats]    # 统计分析 (numpy, scipy)
 pip install knowlyr-datacheck[mcp]      # MCP 服务器
 pip install knowlyr-datacheck[llm]      # LLM 智能检查 (Anthropic/OpenAI)
 pip install knowlyr-datacheck[yaml]     # YAML 规则配置
+pip install knowlyr-datacheck[watch]    # Watch 模式 (watchdog)
 pip install knowlyr-datacheck[all]      # 全部功能
 ```
 
@@ -102,6 +104,10 @@ knowlyr-datacheck check data.json --strict
 knowlyr-datacheck check ./data/
 knowlyr-datacheck check ./data/ -o report.html -f html
 knowlyr-datacheck check ./data/ --pattern "*.jsonl"
+
+# Watch 模式 (文件变更自动重新检查)
+knowlyr-datacheck watch data.json
+knowlyr-datacheck watch ./data/ --debounce 3
 
 # Schema 推断
 knowlyr-datacheck infer data.jsonl -o schema.json
@@ -260,6 +266,67 @@ knowlyr-datacheck check data.json --rules-file rules.yaml
 支持的检查类型：`required`、`non_empty`、`min_length`、`max_length`、`regex`、`enum`
 
 > 需要安装 YAML 支持：`pip install knowlyr-datacheck[yaml]`
+
+---
+
+## 异常检测 / Anomaly Detection
+
+自动检测数值和字符串长度中的异常值，基于 IQR (四分位距) 方法：
+
+```bash
+# 检查时自动包含异常检测 (≥10 个样本时启用)
+knowlyr-datacheck check data.json
+```
+
+检测内容：
+- **数值字段** — 检测超出正常范围的极端值
+- **字符串长度** — 检测异常长或异常短的文本
+
+```python
+from datacheck.anomaly import detect_anomalies
+
+samples = [{"score": 5.0, "text": "hello"}] * 20
+samples.append({"score": 999.0, "text": "x" * 5000})
+
+anomalies = detect_anomalies(samples)
+for field, info in anomalies.items():
+    print(f"{field}: {info['outlier_count']} 个异常值, 正常范围 [{info['bounds']['lower']}, {info['bounds']['upper']}]")
+```
+
+报告输出示例：
+
+| 字段 | 类型 | 异常数 | 正常范围 | 方法 |
+|------|------|--------|----------|------|
+| score | 数值 | 1 | [2.5, 7.5] | IQR |
+| text (长度) | 长度 | 1 | [3, 8] | IQR |
+
+> 纯 Python 实现，无 numpy/scipy 依赖。支持 `iqr` 和 `zscore` 两种方法。
+
+---
+
+## Watch 模式 / Watch Mode
+
+监视数据文件或目录，文件变更时自动重新检查：
+
+```bash
+# 监视单个文件
+knowlyr-datacheck watch data.json
+
+# 监视整个目录 (递归)
+knowlyr-datacheck watch ./data/
+
+# 自定义防抖时间和规则集
+knowlyr-datacheck watch ./data/ --debounce 3 --ruleset sft
+```
+
+功能：
+- 首次运行完整检查
+- 文件新增/修改时自动重新检查
+- 防抖机制避免频繁触发 (默认 2 秒)
+- 支持文件和目录两种模式
+- `Ctrl+C` 优雅退出
+
+> 需要安装：`pip install knowlyr-datacheck[watch]`
 
 ---
 
@@ -620,6 +687,8 @@ repos:
 | `knowlyr-datacheck compare <files...>` | 对比多个文件分布 |
 | `knowlyr-datacheck diff <a.json> <b.json>` | 对比两次质检报告 |
 | `knowlyr-datacheck check <file> --ruleset llm` | LLM 智能质量评估 |
+| `knowlyr-datacheck watch <path>` | 监视文件/目录，变更时自动重新检查 |
+| `knowlyr-datacheck watch <path> --debounce 3` | 自定义防抖时间 (秒) |
 | `knowlyr-datacheck rules` | 列出所有规则 |
 
 ---
@@ -639,6 +708,7 @@ print(f"通过率: {result.pass_rate:.1%}")
 print(f"错误: {result.error_count}")
 print(f"重复: {len(result.duplicates)} 组")
 print(f"近似重复: {len(result.near_duplicates)} 组")
+print(f"异常值: {result.anomaly_count}")
 
 # 使用 YAML 自定义规则
 rules = RuleSet.from_config("rules.yaml")
@@ -677,12 +747,13 @@ result = checker.check_file("data.json")
 ```
 src/datacheck/
 ├── checker.py        # 核心检查器 (加载、采样、近似重复、Schema 推断)
+├── anomaly.py        # 统计异常检测 (IQR/Z-score，纯 Python)
 ├── rules.py          # 规则定义、预设规则集、YAML 配置加载
 ├── text_rules.py     # 文本质量规则 (PII、乱码、重复文本、多语言检测)
 ├── llm_rules.py      # LLM 智能检查 (Anthropic/OpenAI)
 ├── fixer.py          # 数据修复 (去重、去空白、PII 脱敏)
 ├── report.py         # 报告生成 (Markdown / JSON / HTML / Diff)
-├── cli.py            # CLI 命令行 (check/infer/fix/diff/validate/compare/rules)
+├── cli.py            # CLI 命令行 (check/infer/fix/diff/validate/compare/watch/rules)
 └── mcp_server.py     # MCP Server (7 工具)
 ```
 

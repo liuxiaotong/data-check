@@ -230,6 +230,27 @@ class TestDiffCommand:
         assert "对比报告已保存" in result.output
 
 
+class TestWatchCommand:
+    """Tests for the watch command."""
+
+    def test_watch_missing_watchdog(self, runner, monkeypatch):
+        """Test that watch command shows helpful error when watchdog is not installed."""
+        import datacheck.cli as cli_mod
+
+        # Simulate watchdog not being installed by patching the import
+        original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+        def mock_import(name, *args, **kwargs):
+            if name == "watchdog.observers" or name == "watchdog.events":
+                raise ImportError("No module named 'watchdog'")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.__import__", mock_import)
+        result = runner.invoke(cli_mod.main, ["watch", "."])
+        # Should fail with helpful message (exit code 1)
+        assert result.exit_code == 1
+        assert "watchdog" in result.output
+
+
 class TestBatchCheck:
     """Tests for check command with directory input."""
 

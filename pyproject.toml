@@ -36,8 +36,9 @@ stats = ["numpy>=1.20", "scipy>=1.7"]
 llm = ["anthropic>=0.18", "openai>=1.0"]
 mcp = ["mcp>=1.0"]
 yaml = ["PyYAML>=6.0"]
+watch = ["watchdog>=3.0"]
 dev = ["pytest", "ruff"]
-all = ["knowlyr-datacheck[stats,llm,mcp,yaml,dev]"]
+all = ["knowlyr-datacheck[stats,llm,mcp,yaml,watch,dev]"]
 
 [project.scripts]
 knowlyr-datacheck = "datacheck.cli:main"

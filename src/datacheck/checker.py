@@ -31,6 +31,8 @@ class CheckResult:
     duplicates: List[List[str]] = field(default_factory=list)
     distribution: Dict[str, Any] = field(default_factory=dict)
     near_duplicates: List[List[str]] = field(default_factory=list)
+    anomalies: Dict[str, Any] = field(default_factory=dict)
+    anomaly_count: int = 0
     sampled: bool = False
     sampled_count: int = 0
     original_count: int = 0
@@ -164,6 +166,11 @@ class DataChecker:
 
         # Compute distribution
         result.distribution = self._compute_distribution(samples, schema)
+
+        # Anomaly detection
+        from datacheck.anomaly import detect_anomalies
+        result.anomalies = detect_anomalies(samples)
+        result.anomaly_count = sum(a["outlier_count"] for a in result.anomalies.values())
 
         # Compare with reference if provided
         if reference_samples:
