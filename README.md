@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-4_Tools-purple.svg)](#mcp-server)
 
-[快速开始](#快速开始) · [质量规则](#质量规则) · [分布分析](#分布分析) · [MCP Server](#mcp-server) · [Data Pipeline 生态](#data-pipeline-生态)
+[快速开始](#快速开始) · [质量规则](#质量规则) · [Schema 推断](#schema-推断--schema-inference) · [数据修复](#数据修复--data-fix) · [分布分析](#分布分析) · [MCP Server](#mcp-server) · [生态](#data-pipeline-生态)
 
 </div>
 
@@ -90,16 +90,25 @@ knowlyr-datacheck check data.csv
 # 指定 Schema
 knowlyr-datacheck check data.json -s schema.json
 
-# 输出报告
+# 输出报告 (Markdown / JSON / HTML)
 knowlyr-datacheck check data.json -o report.md
+knowlyr-datacheck check data.json -o report.html -f html
+knowlyr-datacheck check data.json -o report.json -f json
 
-# 采样检查 (大数据集)
+# 采样检查 (大数据集，自动显示进度条)
 knowlyr-datacheck check data.jsonl --sample 1000
 knowlyr-datacheck check data.jsonl --sample-rate 0.1
 
 # CI 集成: 自定义阈值
 knowlyr-datacheck check data.json --threshold 0.9
 knowlyr-datacheck check data.json --strict
+
+# Schema 推断
+knowlyr-datacheck infer data.jsonl -o schema.json
+
+# 数据修复 (去重 / 去空白 / PII 脱敏)
+knowlyr-datacheck fix data.jsonl -o fixed.jsonl
+knowlyr-datacheck fix data.jsonl -o fixed.jsonl --strip-pii
 ```
 
 ### 在 Python 中接入 / Python SDK
@@ -243,6 +252,76 @@ knowlyr-datacheck check data.json --rules-file rules.yaml
 支持的检查类型：`required`、`non_empty`、`min_length`、`max_length`、`regex`、`enum`
 
 > 需要安装 YAML 支持：`pip install knowlyr-datacheck[yaml]`
+
+---
+
+## Schema 推断 / Schema Inference
+
+自动从数据文件推断字段类型、约束和必填项：
+
+```bash
+knowlyr-datacheck infer data.jsonl -o schema.json
+```
+
+<details>
+<summary>输出示例</summary>
+
+```json
+{
+  "sample_count": 1000,
+  "fields": {
+    "instruction": {
+      "type": "string",
+      "required": true,
+      "min_length": 5,
+      "max_length": 200,
+      "avg_length": 68
+    },
+    "response": {
+      "type": "string",
+      "required": true,
+      "min_length": 12,
+      "max_length": 820,
+      "avg_length": 251
+    },
+    "score": {
+      "type": "integer",
+      "required": true,
+      "min_value": 1,
+      "max_value": 5,
+      "enum": [1, 2, 3, 4, 5]
+    }
+  }
+}
+```
+
+</details>
+
+---
+
+## 数据修复 / Data Fix
+
+自动修复常见数据质量问题：
+
+```bash
+# 基础修复 (去重 + 去空白 + 移除空样本)
+knowlyr-datacheck fix data.jsonl -o fixed.jsonl
+
+# 包含 PII 脱敏
+knowlyr-datacheck fix data.jsonl -o fixed.jsonl --strip-pii
+
+# 跳过特定修复
+knowlyr-datacheck fix data.jsonl -o fixed.jsonl --no-dedup --no-trim
+```
+
+修复项目：
+
+| 修复 | 说明 |
+|------|------|
+| **去重** | 移除完全重复样本（保留首条） |
+| **去空白** | 去除字符串字段首尾空白 |
+| **移除空样本** | 移除全空/全 null 样本 |
+| **PII 脱敏** | 替换邮箱→`[EMAIL]`、手机→`[PHONE]`、身份证→`[ID]` |
 
 ---
 
@@ -409,18 +488,40 @@ knowlyr-datacheck validate ./output/tencent_CL-bench/
 
 ---
 
+## pre-commit Hook
+
+在提交前自动检查数据文件质量：
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/liuxiaotong/data-check
+    rev: v0.2.0
+    hooks:
+      - id: datacheck
+```
+
+自动对 `.json`、`.jsonl`、`.csv` 文件运行质量检查。
+
+---
+
 ## 命令参考
 
 | 命令 | 功能 |
 |------|------|
 | `knowlyr-datacheck check <file>` | 检查数据文件 (JSON/JSONL/CSV) |
 | `knowlyr-datacheck check <file> -s <schema>` | 使用 Schema 检查 |
+| `knowlyr-datacheck check <file> -f html -o report.html` | 输出 HTML 报告 |
 | `knowlyr-datacheck check <file> --ruleset sft` | 使用指定规则集 |
 | `knowlyr-datacheck check <file> --rules-file rules.yaml` | 使用自定义 YAML 规则 |
 | `knowlyr-datacheck check <file> --sample 1000` | 随机抽样 1000 条检查 |
 | `knowlyr-datacheck check <file> --sample-rate 0.1` | 随机抽样 10% 检查 |
 | `knowlyr-datacheck check <file> --threshold 0.9` | 通过率低于 90% 时退出码 1 |
 | `knowlyr-datacheck check <file> --strict` | 任何错误/警告都退出码 1 |
+| `knowlyr-datacheck infer <file>` | 推断 Schema (字段类型/约束) |
+| `knowlyr-datacheck infer <file> -o schema.json` | 推断并保存 Schema |
+| `knowlyr-datacheck fix <file> -o <output>` | 修复数据 (去重/去空白/清理) |
+| `knowlyr-datacheck fix <file> -o <output> --strip-pii` | 修复并脱敏 PII |
 | `knowlyr-datacheck validate <dir>` | 验证 DataRecipe 输出 |
 | `knowlyr-datacheck compare <files...>` | 对比多个文件分布 |
 | `knowlyr-datacheck rules` | 列出所有规则 |
@@ -430,12 +531,12 @@ knowlyr-datacheck validate ./output/tencent_CL-bench/
 ## API 使用
 
 ```python
-from datacheck import DataChecker, QualityReport, RuleSet
+from datacheck import DataChecker, QualityReport, RuleSet, DataFixer
 
 # 创建检查器
 checker = DataChecker()
 
-# 检查文件 (支持 JSON/JSONL/CSV + 采样)
+# 检查文件 (支持 JSON/JSONL/CSV + 采样 + 进度回调)
 result = checker.check_file("data.jsonl", sample_count=1000)
 
 print(f"通过率: {result.pass_rate:.1%}")
@@ -448,9 +549,18 @@ rules = RuleSet.from_config("rules.yaml")
 checker = DataChecker(rules)
 result = checker.check_file("data.json")
 
-# 生成报告
+# 生成报告 (Markdown / JSON / HTML)
 report = QualityReport(result)
 report.save("report.md")
+report.save("report.html", format="html")
+
+# Schema 推断
+schema = checker.infer_schema_file("data.jsonl", "schema.json")
+
+# 数据修复
+fixer = DataFixer()
+result = fixer.fix_file("data.jsonl", "fixed.jsonl", strip_pii=True)
+print(f"去重: {result.duplicates_removed}, PII 脱敏: {result.pii_redacted_count}")
 ```
 
 ---
@@ -459,11 +569,12 @@ report.save("report.md")
 
 ```
 src/datacheck/
-├── checker.py        # 核心检查器 (JSON/JSONL/CSV 加载、采样、近似重复检测)
+├── checker.py        # 核心检查器 (加载、采样、近似重复、Schema 推断)
 ├── rules.py          # 规则定义、预设规则集、YAML 配置加载
 ├── text_rules.py     # 文本质量规则 (PII、乱码、重复文本、n-gram)
-├── report.py         # 报告生成 (Markdown / JSON)
-├── cli.py            # CLI 命令行
+├── fixer.py          # 数据修复 (去重、去空白、PII 脱敏)
+├── report.py         # 报告生成 (Markdown / JSON / HTML)
+├── cli.py            # CLI 命令行 (check/infer/fix/validate/compare/rules)
 └── mcp_server.py     # MCP Server (4 工具)
 ```
 
