@@ -16,7 +16,7 @@
 
 ---
 
-**GitHub Topics**: `data-quality`, `llm-data`, `cli`, `mcp`, `data-validation`
+**GitHub Topics**: `data-quality`, `anomaly-detection`, `data-validation`, `mcp`, `ai-data-pipeline`
 
 自动化数据质量检查，支持规则验证、重复检测、分布分析，生成可读的质量报告。
 
