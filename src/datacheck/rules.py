@@ -142,17 +142,6 @@ class RuleSet:
             )
         )
 
-        # Language consistency
-        self.add_rule(
-            Rule(
-                id="language_consistency",
-                name="语言一致性",
-                description="检查文本语言是否一致",
-                severity=Severity.INFO,
-                check_fn=self._check_language,
-            )
-        )
-
         # Score validity
         self.add_rule(
             Rule(
@@ -165,7 +154,21 @@ class RuleSet:
         )
 
         # Text quality rules
-        from datacheck.text_rules import check_pii, check_garbled_text, check_repetitive_text
+        from datacheck.text_rules import (
+            check_pii, check_garbled_text, check_repetitive_text,
+            check_language_consistency,
+        )
+
+        # Language consistency (using enhanced detection from text_rules)
+        self.add_rule(
+            Rule(
+                id="language_consistency",
+                name="语言一致性",
+                description="检查文本语言是否一致 (支持中/英/日/韩/俄/阿拉伯/泰语)",
+                severity=Severity.INFO,
+                check_fn=check_language_consistency,
+            )
+        )
 
         self.add_rule(
             Rule(
@@ -366,26 +369,6 @@ class RuleSet:
         return True
 
     @staticmethod
-    def _check_language(sample: Dict[str, Any], schema: Dict[str, Any]) -> bool:
-        """Check language consistency (basic heuristic)."""
-        data = sample.get("data", sample)
-
-        # Simple check: if one field has Chinese, others should too
-        has_chinese = []
-
-        for key, value in data.items():
-            if isinstance(value, str) and len(value) > 10:
-                chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", value))
-                ratio = chinese_chars / len(value) if len(value) > 0 else 0
-                has_chinese.append(ratio > 0.1)
-
-        if len(has_chinese) < 2:
-            return True
-
-        # Check consistency
-        return len(set(has_chinese)) == 1
-
-    @staticmethod
     def _check_score_valid(sample: Dict[str, Any], schema: Dict[str, Any]) -> bool:
         """Check score is within valid range."""
         data = sample.get("data", sample)
@@ -431,6 +414,29 @@ def get_sft_ruleset() -> RuleSet:
             description="检查回复是否足够详细",
             severity=Severity.WARNING,
             check_fn=lambda s, _: len(s.get("data", s).get("response", "")) >= 20,
+        )
+    )
+
+    return ruleset
+
+
+def get_llm_ruleset(provider: str = "anthropic", model: str = None) -> RuleSet:
+    """Get rule set with LLM-based quality checking.
+
+    Requires: pip install knowlyr-datacheck[llm]
+    """
+    from datacheck.llm_rules import LLMChecker
+
+    ruleset = RuleSet("llm")
+    checker = LLMChecker(provider=provider, model=model)
+
+    ruleset.add_rule(
+        Rule(
+            id="llm_quality",
+            name="LLM 质量评估",
+            description="使用 LLM 评估样本的指令清晰度、回复相关性和完整度",
+            severity=Severity.INFO,
+            check_fn=checker.make_check_fn(min_score=3),
         )
     )
 

@@ -7,7 +7,9 @@ from datacheck.text_rules import (
     check_garbled_text,
     check_pii,
     check_repetitive_text,
+    check_language_consistency,
     compute_ngrams,
+    detect_language,
     jaccard_similarity,
 )
 
@@ -124,6 +126,49 @@ class TestNgramHelpers:
 
     def test_jaccard_empty(self):
         assert jaccard_similarity(set(), set()) == 1.0
+
+
+class TestLanguageDetection:
+    """Tests for language detection."""
+
+    def test_detect_chinese(self):
+        lang, conf = detect_language("这是一段中文文本，用于测试语言检测")
+        assert lang == "zh"
+        assert conf > 0.5
+
+    def test_detect_english(self):
+        lang, conf = detect_language("This is an English text for testing language detection")
+        assert lang == "latin"
+        assert conf > 0.5
+
+    def test_detect_japanese(self):
+        lang, conf = detect_language("これは日本語のテストテキストです")
+        assert lang in ("ja", "zh")  # Some kanji overlap with Chinese
+
+    def test_detect_korean(self):
+        lang, conf = detect_language("이것은 한국어 테스트 텍스트입니다")
+        assert lang == "ko"
+
+    def test_detect_empty(self):
+        lang, conf = detect_language("")
+        assert lang == "unknown"
+        assert conf == 0.0
+
+    def test_detect_short(self):
+        lang, conf = detect_language("ab")
+        assert lang == "unknown"
+
+    def test_consistency_same_language(self):
+        sample = {"data": {"instruction": "请解释什么是人工智能", "response": "人工智能是一种模拟人类智能的技术"}}
+        assert check_language_consistency(sample, {}) is True
+
+    def test_consistency_mixed_language(self):
+        sample = {"data": {"instruction": "请解释什么是人工智能这个概念", "response": "Artificial intelligence is a technology that simulates human intelligence"}}
+        assert check_language_consistency(sample, {}) is False
+
+    def test_consistency_single_field(self):
+        sample = {"data": {"text": "Just one field here"}}
+        assert check_language_consistency(sample, {}) is True
 
 
 class TestNearDuplicateDetection:

@@ -13,6 +13,7 @@ except ImportError:
     HAS_MCP = False
 
 from datacheck.checker import DataChecker
+from datacheck.fixer import DataFixer
 from datacheck.report import QualityReport
 from datacheck.rules import RuleSet, get_sft_ruleset, get_preference_ruleset
 
@@ -98,6 +99,46 @@ def create_server() -> "Server":
                 inputSchema={
                     "type": "object",
                     "properties": {},
+                },
+            ),
+            Tool(
+                name="infer_schema",
+                description="从数据文件推断 Schema (字段类型、约束、必填项)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "data_path": {
+                            "type": "string",
+                            "description": "数据文件路径 (JSON/JSONL/CSV)",
+                        },
+                        "output_path": {
+                            "type": "string",
+                            "description": "Schema 输出路径（可选）",
+                        },
+                    },
+                    "required": ["data_path"],
+                },
+            ),
+            Tool(
+                name="fix_data",
+                description="修复数据文件常见质量问题 (去重、去空白、PII 脱敏)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "data_path": {
+                            "type": "string",
+                            "description": "数据文件路径 (JSON/JSONL/CSV)",
+                        },
+                        "output_path": {
+                            "type": "string",
+                            "description": "修复后文件输出路径 (JSONL)",
+                        },
+                        "strip_pii": {
+                            "type": "boolean",
+                            "description": "是否脱敏 PII 信息（默认: false）",
+                        },
+                    },
+                    "required": ["data_path", "output_path"],
                 },
             ),
         ]
@@ -276,6 +317,73 @@ def create_server() -> "Server":
                     "- `preference`: 偏好数据规则",
                 ]
             )
+
+            return [TextContent(type="text", text="\n".join(lines))]
+
+        elif name == "infer_schema":
+            checker = DataChecker()
+            schema = checker.infer_schema_file(
+                arguments["data_path"],
+                arguments.get("output_path"),
+            )
+
+            fields = schema.get("fields", {})
+            field_count = len(fields)
+            required_count = sum(1 for f in fields.values() if f.get("required"))
+
+            lines = [
+                "## Schema 推断结果",
+                "",
+                f"- 样本数: {schema.get('sample_count', 0)}",
+                f"- 字段数: {field_count}",
+                f"- 必填字段: {required_count}",
+                "",
+                "### 字段详情",
+                "",
+                "| 字段 | 类型 | 必填 | 约束 |",
+                "|------|------|------|------|",
+            ]
+
+            for fname, fdef in fields.items():
+                ftype = fdef.get("type", "-")
+                req = "是" if fdef.get("required") else "否"
+                constraints = []
+                if "min_length" in fdef:
+                    constraints.append(f"长度 {fdef['min_length']}-{fdef['max_length']}")
+                if "enum" in fdef:
+                    constraints.append(f"枚举 {fdef['enum']}")
+                if "min_value" in fdef:
+                    constraints.append(f"值 {fdef['min_value']}-{fdef['max_value']}")
+                lines.append(f"| {fname} | {ftype} | {req} | {', '.join(constraints) or '-'} |")
+
+            if arguments.get("output_path"):
+                lines.extend(["", f"Schema 已保存: {arguments['output_path']}"])
+
+            return [TextContent(type="text", text="\n".join(lines))]
+
+        elif name == "fix_data":
+            fixer = DataFixer()
+            result = fixer.fix_file(
+                arguments["data_path"],
+                arguments["output_path"],
+                strip_pii=arguments.get("strip_pii", False),
+            )
+
+            lines = [
+                "## 数据修复结果",
+                "",
+                f"- 输入样本: {result.total_input}",
+                f"- 输出样本: {result.total_output}",
+            ]
+            if result.duplicates_removed:
+                lines.append(f"- 去除重复: {result.duplicates_removed}")
+            if result.trimmed_count:
+                lines.append(f"- 修剪空白: {result.trimmed_count} 个字段")
+            if result.empty_removed:
+                lines.append(f"- 移除空样本: {result.empty_removed}")
+            if result.pii_redacted_count:
+                lines.append(f"- PII 脱敏: {result.pii_redacted_count} 个字段")
+            lines.extend(["", f"输出文件: {arguments['output_path']}"])
 
             return [TextContent(type="text", text="\n".join(lines))]
 

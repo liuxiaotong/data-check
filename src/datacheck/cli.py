@@ -9,7 +9,7 @@ import click
 from datacheck import __version__
 from datacheck.checker import DataChecker
 from datacheck.report import QualityReport
-from datacheck.rules import RuleSet, get_sft_ruleset, get_preference_ruleset
+from datacheck.rules import RuleSet, get_sft_ruleset, get_preference_ruleset, get_llm_ruleset
 
 
 @click.group()
@@ -32,9 +32,9 @@ def main():
 )
 @click.option(
     "--ruleset",
-    type=click.Choice(["default", "sft", "preference"]),
+    type=click.Choice(["default", "sft", "preference", "llm"]),
     default="default",
-    help="规则集",
+    help="规则集 (llm 需要 pip install knowlyr-datacheck[llm])",
 )
 @click.option("--rules-file", type=click.Path(exists=True), default=None, help="自定义规则配置文件 (YAML)")
 @click.option("--sample", type=int, default=None, help="随机抽样数量")
@@ -64,6 +64,8 @@ def check(
         rules = get_sft_ruleset()
     elif ruleset == "preference":
         rules = get_preference_ruleset()
+    elif ruleset == "llm":
+        rules = get_llm_ruleset()
     else:
         rules = RuleSet()
 
@@ -352,6 +354,32 @@ def fix(data_path: str, output: str, no_dedup: bool, no_trim: bool, strip_pii: b
     if result.pii_redacted_count:
         click.echo(f"  PII 脱敏: {result.pii_redacted_count} 个字段")
     click.echo(f"  输出文件: {output}")
+
+
+@main.command(name="diff")
+@click.argument("report_a", type=click.Path(exists=True))
+@click.argument("report_b", type=click.Path(exists=True))
+@click.option("-o", "--output", type=click.Path(), help="对比报告输出路径")
+def diff_cmd(report_a: str, report_b: str, output: Optional[str]):
+    """对比两份质量报告
+
+    REPORT_A: 第一份报告 (JSON 格式)
+    REPORT_B: 第二份报告 (JSON 格式)
+    """
+    import json as json_module
+
+    with open(report_a, "r", encoding="utf-8") as f:
+        data_a = json_module.load(f)
+    with open(report_b, "r", encoding="utf-8") as f:
+        data_b = json_module.load(f)
+
+    diff_report = QualityReport.diff(data_a, data_b)
+
+    if output:
+        Path(output).write_text(diff_report, encoding="utf-8")
+        click.echo(f"✓ 对比报告已保存: {output}")
+    else:
+        click.echo(diff_report)
 
 
 if __name__ == "__main__":

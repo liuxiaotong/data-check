@@ -183,3 +183,48 @@ class TestRulesCommand:
         assert result.exit_code == 0
         assert "可用规则" in result.output
         assert "预设规则集" in result.output
+
+
+class TestDiffCommand:
+    """Tests for the diff command."""
+
+    def test_diff_two_reports(self, runner, tmp_path):
+        report_a = {
+            "title": "报告 A",
+            "generated_at": "2025-01-01",
+            "summary": {"total_samples": 100, "passed_samples": 90, "failed_samples": 10,
+                        "pass_rate": 0.9, "error_count": 5, "warning_count": 3},
+            "rule_results": {},
+            "duplicates": [],
+        }
+        report_b = {
+            "title": "报告 B",
+            "generated_at": "2025-01-02",
+            "summary": {"total_samples": 100, "passed_samples": 95, "failed_samples": 5,
+                        "pass_rate": 0.95, "error_count": 2, "warning_count": 1},
+            "rule_results": {},
+            "duplicates": [],
+        }
+        fa = tmp_path / "a.json"
+        fb = tmp_path / "b.json"
+        fa.write_text(json.dumps(report_a), encoding="utf-8")
+        fb.write_text(json.dumps(report_b), encoding="utf-8")
+
+        result = runner.invoke(main, ["diff", str(fa), str(fb)])
+        assert result.exit_code == 0
+        assert "质量报告对比" in result.output
+
+    def test_diff_save_output(self, runner, tmp_path):
+        report = {
+            "summary": {"total_samples": 10, "passed_samples": 10, "failed_samples": 0,
+                        "pass_rate": 1.0, "error_count": 0, "warning_count": 0},
+        }
+        fa = tmp_path / "a.json"
+        fb = tmp_path / "b.json"
+        fa.write_text(json.dumps(report), encoding="utf-8")
+        fb.write_text(json.dumps(report), encoding="utf-8")
+
+        output = str(tmp_path / "diff.md")
+        result = runner.invoke(main, ["diff", str(fa), str(fb), "-o", output])
+        assert result.exit_code == 0
+        assert "对比报告已保存" in result.output

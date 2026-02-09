@@ -490,3 +490,93 @@ class QualityReport:
         print(f"  通过率: {self.result.pass_rate:.1%}")
         print(f"  评级: {grade}")
         print(f"{'=' * 50}\n")
+
+    @staticmethod
+    def diff(report_a: Dict[str, Any], report_b: Dict[str, Any]) -> str:
+        """Compare two JSON reports and return a markdown diff.
+
+        Args:
+            report_a: First report (JSON dict, "before")
+            report_b: Second report (JSON dict, "after")
+
+        Returns:
+            Markdown formatted comparison
+        """
+        def _arrow(old, new):
+            if new > old:
+                return "↑"
+            elif new < old:
+                return "↓"
+            return "="
+
+        def _fmt_pct(val):
+            if isinstance(val, (int, float)):
+                return f"{val:.1%}" if val <= 1 else f"{val}"
+            return str(val)
+
+        sa = report_a.get("summary", {})
+        sb = report_b.get("summary", {})
+
+        lines = [
+            "# 质量报告对比",
+            "",
+            f"- A: {report_a.get('title', '报告 A')} ({report_a.get('generated_at', '-')})",
+            f"- B: {report_b.get('title', '报告 B')} ({report_b.get('generated_at', '-')})",
+            "",
+            "## 概要对比",
+            "",
+            "| 指标 | A | B | 变化 |",
+            "|------|---|---|------|",
+        ]
+
+        metrics = [
+            ("总样本", "total_samples", str),
+            ("通过样本", "passed_samples", str),
+            ("失败样本", "failed_samples", str),
+            ("通过率", "pass_rate", _fmt_pct),
+            ("错误数", "error_count", str),
+            ("警告数", "warning_count", str),
+        ]
+
+        for label, key, fmt in metrics:
+            va = sa.get(key, 0)
+            vb = sb.get(key, 0)
+            arrow = _arrow(va, vb)
+            lines.append(f"| {label} | {fmt(va)} | {fmt(vb)} | {arrow} |")
+
+        # Rule comparison
+        rules_a = report_a.get("rule_results", {})
+        rules_b = report_b.get("rule_results", {})
+        all_rules = sorted(set(rules_a.keys()) | set(rules_b.keys()))
+
+        if all_rules:
+            lines.extend([
+                "",
+                "## 规则对比",
+                "",
+                "| 规则 | A 失败 | B 失败 | 变化 |",
+                "|------|--------|--------|------|",
+            ])
+
+            for rid in all_rules:
+                ra = rules_a.get(rid, {})
+                rb = rules_b.get(rid, {})
+                name = rb.get("name", ra.get("name", rid))
+                fa = ra.get("failed", 0)
+                fb = rb.get("failed", 0)
+                arrow = _arrow(fa, fb)
+                lines.append(f"| {name} | {fa} | {fb} | {arrow} |")
+
+        # Duplicates comparison
+        dupes_a = len(report_a.get("duplicates", []))
+        dupes_b = len(report_b.get("duplicates", []))
+        if dupes_a or dupes_b:
+            lines.extend([
+                "",
+                "## 重复数据",
+                "",
+                f"- A: {dupes_a} 组",
+                f"- B: {dupes_b} 组 {_arrow(dupes_a, dupes_b)}",
+            ])
+
+        return "\n".join(lines)

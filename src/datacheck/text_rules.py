@@ -26,6 +26,74 @@ def jaccard_similarity(set_a: Set[str], set_b: Set[str]) -> float:
     return len(set_a & set_b) / union
 
 
+# --- Language detection ---
+
+# Unicode ranges for language detection
+_LANG_RANGES = [
+    ("zh", re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")),       # Chinese
+    ("ja", re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")),       # Japanese (Hiragana + Katakana)
+    ("ko", re.compile(r"[\uac00-\ud7af\u1100-\u11ff]")),       # Korean
+    ("ar", re.compile(r"[\u0600-\u06ff\u0750-\u077f]")),       # Arabic
+    ("ru", re.compile(r"[\u0400-\u04ff]")),                     # Cyrillic
+    ("th", re.compile(r"[\u0e00-\u0e7f]")),                     # Thai
+]
+
+
+def detect_language(text: str) -> tuple:
+    """Detect the dominant language of a text based on Unicode character ranges.
+
+    Returns:
+        (language_code, confidence) tuple. Language codes:
+        'zh', 'ja', 'ko', 'ar', 'ru', 'th', 'latin', 'unknown'
+    """
+    if not text or len(text.strip()) < 3:
+        return ("unknown", 0.0)
+
+    total_alpha = 0
+    lang_counts: Dict[str, int] = {}
+
+    for lang, pattern in _LANG_RANGES:
+        count = len(pattern.findall(text))
+        if count > 0:
+            lang_counts[lang] = count
+            total_alpha += count
+
+    # Count Latin characters
+    latin_count = len(re.findall(r"[a-zA-Z]", text))
+    if latin_count > 0:
+        lang_counts["latin"] = latin_count
+        total_alpha += latin_count
+
+    if total_alpha == 0:
+        return ("unknown", 0.0)
+
+    # Find dominant language
+    dominant = max(lang_counts, key=lang_counts.get)
+    confidence = lang_counts[dominant] / total_alpha
+
+    return (dominant, round(confidence, 2))
+
+
+def check_language_consistency(sample: Dict[str, Any], schema: Dict[str, Any]) -> bool:
+    """Check if all text fields in a sample have consistent language.
+
+    Returns False if fields have different dominant languages.
+    """
+    data = sample.get("data", sample)
+    languages = []
+
+    for value in data.values():
+        if isinstance(value, str) and len(value) > 10:
+            lang, confidence = detect_language(value)
+            if lang != "unknown" and confidence > 0.3:
+                languages.append(lang)
+
+    if len(languages) < 2:
+        return True
+
+    return len(set(languages)) == 1
+
+
 # --- PII detection ---
 
 PII_PATTERNS = {

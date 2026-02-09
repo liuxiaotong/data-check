@@ -174,3 +174,62 @@ class TestHTMLReport:
         )
         html = QualityReport(result).to_html()
         assert "10/100" in html
+
+
+class TestDiffReport:
+    """Tests for report diff."""
+
+    def test_diff_basic(self):
+        report_a = {
+            "title": "报告 A",
+            "generated_at": "2025-01-01",
+            "summary": {
+                "total_samples": 100,
+                "passed_samples": 90,
+                "failed_samples": 10,
+                "pass_rate": 0.9,
+                "error_count": 5,
+                "warning_count": 3,
+            },
+            "rule_results": {
+                "non_empty": {"name": "非空检查", "passed": 90, "failed": 10},
+            },
+            "duplicates": [["a", "b"]],
+        }
+        report_b = {
+            "title": "报告 B",
+            "generated_at": "2025-01-02",
+            "summary": {
+                "total_samples": 100,
+                "passed_samples": 95,
+                "failed_samples": 5,
+                "pass_rate": 0.95,
+                "error_count": 2,
+                "warning_count": 1,
+            },
+            "rule_results": {
+                "non_empty": {"name": "非空检查", "passed": 95, "failed": 5},
+            },
+            "duplicates": [],
+        }
+
+        diff = QualityReport.diff(report_a, report_b)
+        assert "质量报告对比" in diff
+        assert "报告 A" in diff
+        assert "报告 B" in diff
+        assert "非空检查" in diff
+
+    def test_diff_arrows(self):
+        report_a = {
+            "summary": {"pass_rate": 0.8, "error_count": 10, "total_samples": 100,
+                        "passed_samples": 80, "failed_samples": 20, "warning_count": 5},
+        }
+        report_b = {
+            "summary": {"pass_rate": 0.9, "error_count": 5, "total_samples": 100,
+                        "passed_samples": 90, "failed_samples": 10, "warning_count": 5},
+        }
+        diff = QualityReport.diff(report_a, report_b)
+        # pass_rate increased
+        assert "↑" in diff
+        # error_count decreased
+        assert "↓" in diff
