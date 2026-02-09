@@ -8,9 +8,9 @@
 [![PyPI](https://img.shields.io/pypi/v/knowlyr-datacheck?color=blue)](https://pypi.org/project/knowlyr-datacheck/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![MCP](https://img.shields.io/badge/MCP-6_Tools-purple.svg)](#mcp-server)
+[![MCP](https://img.shields.io/badge/MCP-7_Tools-purple.svg)](#mcp-server)
 
-[快速开始](#快速开始) · [质量规则](#质量规则) · [Schema 推断](#schema-推断--schema-inference) · [数据修复](#数据修复--data-fix) · [报告对比](#报告对比--report-diff) · [LLM 智能检查](#llm-智能检查--llm-quality-check) · [MCP Server](#mcp-server) · [生态](#data-pipeline-生态)
+[快速开始](#快速开始) · [质量规则](#质量规则) · [Schema 推断](#schema-推断--schema-inference) · [数据修复](#数据修复--data-fix) · [报告对比](#报告对比--report-diff) · [LLM 智能检查](#llm-智能检查--llm-quality-check) · [MCP Server](#mcp-server) · [GitHub Actions](#github-actions) · [生态](#data-pipeline-生态)
 
 </div>
 
@@ -97,6 +97,11 @@ knowlyr-datacheck check data.jsonl --sample-rate 0.1
 # CI 集成: 自定义阈值
 knowlyr-datacheck check data.json --threshold 0.9
 knowlyr-datacheck check data.json --strict
+
+# 批量检查目录 (递归扫描所有数据文件)
+knowlyr-datacheck check ./data/
+knowlyr-datacheck check ./data/ -o report.html -f html
+knowlyr-datacheck check ./data/ --pattern "*.jsonl"
 
 # Schema 推断
 knowlyr-datacheck infer data.jsonl -o schema.json
@@ -459,6 +464,7 @@ knowlyr-datacheck check data.json --ruleset llm --llm-model claude-sonnet-4-5-20
 | `compare_distributions` | 对比多个数据文件分布 |
 | `infer_schema` | 推断数据文件 Schema |
 | `fix_data` | 修复数据 (去重/去空白/PII 脱敏) |
+| `batch_check_directory` | 批量检查目录下所有数据文件 |
 | `list_quality_rules` | 列出所有质量检查规则 |
 
 ### 使用示例
@@ -476,6 +482,27 @@ Claude: [调用 check_data_quality]
 
         发现 2 组重复数据
 ```
+
+---
+
+## GitHub Actions
+
+在 CI/CD 中自动检查数据质量。复制模板到你的仓库：
+
+```bash
+mkdir -p .github/workflows
+cp examples/github-actions/data-quality.yml .github/workflows/
+```
+
+功能：
+- 数据文件变更时自动触发检查
+- 在 PR 中自动发表质量报告评论
+- 上传报告 artifact
+- 通过率低于阈值时构建失败
+
+可配置变量：`DATA_DIR` (数据目录)、`THRESHOLD` (最低通过率)、`RULESET` (规则集)
+
+> 模板文件: [`examples/github-actions/data-quality.yml`](examples/github-actions/data-quality.yml)
 
 ---
 
@@ -583,6 +610,8 @@ repos:
 | `knowlyr-datacheck check <file> --sample-rate 0.1` | 随机抽样 10% 检查 |
 | `knowlyr-datacheck check <file> --threshold 0.9` | 通过率低于 90% 时退出码 1 |
 | `knowlyr-datacheck check <file> --strict` | 任何错误/警告都退出码 1 |
+| `knowlyr-datacheck check <dir>` | 批量检查目录下所有数据文件 |
+| `knowlyr-datacheck check <dir> --pattern "*.jsonl"` | 按模式过滤文件 |
 | `knowlyr-datacheck infer <file>` | 推断 Schema (字段类型/约束) |
 | `knowlyr-datacheck infer <file> -o schema.json` | 推断并保存 Schema |
 | `knowlyr-datacheck fix <file> -o <output>` | 修复数据 (去重/去空白/清理) |
@@ -654,7 +683,7 @@ src/datacheck/
 ├── fixer.py          # 数据修复 (去重、去空白、PII 脱敏)
 ├── report.py         # 报告生成 (Markdown / JSON / HTML / Diff)
 ├── cli.py            # CLI 命令行 (check/infer/fix/diff/validate/compare/rules)
-└── mcp_server.py     # MCP Server (6 工具)
+└── mcp_server.py     # MCP Server (7 工具)
 ```
 
 ---
