@@ -228,3 +228,61 @@ class TestDiffCommand:
         result = runner.invoke(main, ["diff", str(fa), str(fb), "-o", output])
         assert result.exit_code == 0
         assert "对比报告已保存" in result.output
+
+
+class TestBatchCheck:
+    """Tests for check command with directory input."""
+
+    def test_check_directory(self, runner, tmp_path):
+        data = [{"instruction": "Q1", "response": "A1"}]
+        (tmp_path / "a.json").write_text(json.dumps(data), encoding="utf-8")
+        (tmp_path / "b.json").write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(main, ["check", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "批量数据质量检查结果" in result.output
+
+    def test_check_directory_output(self, runner, tmp_path):
+        data = [{"instruction": "Q1", "response": "A1"}]
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        (data_dir / "a.json").write_text(json.dumps(data), encoding="utf-8")
+
+        output = str(tmp_path / "report.md")
+        result = runner.invoke(main, ["check", str(data_dir), "-o", output])
+        assert result.exit_code == 0
+        assert "报告已保存" in result.output
+
+    def test_check_directory_json(self, runner, tmp_path):
+        data = [{"text": "hello"}]
+        (tmp_path / "d.json").write_text(json.dumps(data), encoding="utf-8")
+
+        output = str(tmp_path / "report.json")
+        result = runner.invoke(main, ["check", str(tmp_path), "-f", "json", "-o", output])
+        assert result.exit_code == 0
+
+        from pathlib import Path
+        report = json.loads(Path(output).read_text())
+        assert "aggregate" in report
+        assert "files" in report
+
+    def test_check_directory_threshold_fail(self, runner, tmp_path):
+        data = [
+            {"instruction": "Q1", "response": "A1"},
+            {"instruction": "", "response": ""},  # will fail non_empty
+        ]
+        (tmp_path / "bad.json").write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(main, ["check", str(tmp_path), "--threshold", "1.0"])
+        assert result.exit_code == 1
+
+    def test_check_directory_strict(self, runner, tmp_path):
+        data = [
+            {"instruction": "Q1", "response": "A1"},
+            {"instruction": "", "response": ""},  # warning
+        ]
+        (tmp_path / "d.json").write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(main, ["check", str(tmp_path), "--strict"])
+        assert result.exit_code == 1
+        assert "严格模式" in result.output

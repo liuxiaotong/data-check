@@ -36,6 +36,30 @@ class CheckResult:
     original_count: int = 0
 
 
+SUPPORTED_EXTENSIONS = {".json", ".jsonl", ".csv"}
+
+
+@dataclass
+class BatchCheckResult:
+    """Result of batch directory check."""
+
+    success: bool = True
+    error: str = ""
+    directory: str = ""
+    file_results: Dict[str, CheckResult] = field(default_factory=dict)
+    total_files: int = 0
+    passed_files: int = 0
+    failed_files: int = 0
+    total_samples: int = 0
+    total_passed_samples: int = 0
+    total_failed_samples: int = 0
+    overall_pass_rate: float = 0.0
+    total_error_count: int = 0
+    total_warning_count: int = 0
+    total_info_count: int = 0
+    skipped_files: List[str] = field(default_factory=list)
+
+
 class DataChecker:
     """Check data quality against rules and schema.
 
@@ -243,6 +267,93 @@ class DataChecker:
         # Save report if output path provided
         if output_path:
             self._save_report(result, output_path)
+
+        return result
+
+    def check_directory(
+        self,
+        dir_path: str,
+        schema_path: Optional[str] = None,
+        patterns: Optional[List[str]] = None,
+        sample_count: Optional[int] = None,
+        sample_rate: Optional[float] = None,
+        on_file_start: Optional[Callable[[str, int, int], None]] = None,
+    ) -> BatchCheckResult:
+        """Check all data files in a directory.
+
+        Args:
+            dir_path: Path to directory
+            schema_path: Path to schema JSON file (optional)
+            patterns: File glob patterns (default: *.json, *.jsonl, *.csv)
+            sample_count: Random sample N items per file (optional)
+            sample_rate: Random sample ratio per file (optional)
+            on_file_start: Callback(relative_path, current_index, total_count)
+
+        Returns:
+            BatchCheckResult with per-file results and aggregate stats
+        """
+        dir_path = Path(dir_path)
+        result = BatchCheckResult(directory=str(dir_path))
+
+        if not dir_path.is_dir():
+            result.success = False
+            result.error = f"不是目录: {dir_path}"
+            return result
+
+        # Collect files
+        if patterns is None:
+            patterns = [f"*{ext}" for ext in SUPPORTED_EXTENSIONS]
+
+        files: set = set()
+        for pat in patterns:
+            files.update(dir_path.rglob(pat))
+
+        # Filter to supported extensions and sort
+        file_list = sorted(
+            f for f in files
+            if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+        )
+
+        result.total_files = len(file_list)
+
+        if not file_list:
+            result.overall_pass_rate = 1.0
+            return result
+
+        # Check each file
+        for idx, file_path in enumerate(file_list):
+            rel_path = str(file_path.relative_to(dir_path))
+
+            if on_file_start:
+                on_file_start(rel_path, idx + 1, len(file_list))
+
+            try:
+                file_result = self.check_file(
+                    str(file_path),
+                    schema_path=schema_path,
+                    sample_count=sample_count,
+                    sample_rate=sample_rate,
+                )
+                result.file_results[rel_path] = file_result
+                result.total_samples += file_result.total_samples
+                result.total_passed_samples += file_result.passed_samples
+                result.total_failed_samples += file_result.failed_samples
+                result.total_error_count += file_result.error_count
+                result.total_warning_count += file_result.warning_count
+                result.total_info_count += file_result.info_count
+            except Exception as e:
+                result.skipped_files.append(f"{rel_path}: {e}")
+
+        # Aggregate
+        if result.total_samples > 0:
+            result.overall_pass_rate = result.total_passed_samples / result.total_samples
+        else:
+            result.overall_pass_rate = 1.0
+
+        result.passed_files = sum(
+            1 for r in result.file_results.values() if r.error_count == 0
+        )
+        result.failed_files = result.total_files - result.passed_files - len(result.skipped_files)
 
         return result
 

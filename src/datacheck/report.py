@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-from datacheck.checker import CheckResult
+from datacheck.checker import BatchCheckResult, CheckResult
 
 
 @dataclass
@@ -580,3 +580,213 @@ class QualityReport:
             ])
 
         return "\n".join(lines)
+
+
+def _grade(pass_rate: float):
+    """Return (grade_text, grade_color) for a pass rate."""
+    score = pass_rate * 100
+    if score >= 90:
+        return "🟢 优秀", "#22c55e"
+    elif score >= 70:
+        return "🟡 良好", "#eab308"
+    elif score >= 50:
+        return "🟠 一般", "#f97316"
+    return "🔴 需改进", "#ef4444"
+
+
+@dataclass
+class BatchQualityReport:
+    """Generate quality reports for batch directory checks."""
+
+    result: BatchCheckResult
+    title: str = "批量数据质量报告"
+
+    def to_markdown(self) -> str:
+        """Generate markdown report."""
+        r = self.result
+        grade_text, _ = _grade(r.overall_pass_rate)
+
+        lines = [
+            f"# {self.title}",
+            "",
+            f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"目录: `{r.directory}`",
+            "",
+            "---",
+            "",
+            "## 汇总",
+            "",
+            "| 指标 | 数值 |",
+            "|------|------|",
+            f"| 检查文件数 | {r.total_files} |",
+            f"| 总样本数 | {r.total_samples} |",
+            f"| 通过样本 | {r.total_passed_samples} |",
+            f"| 失败样本 | {r.total_failed_samples} |",
+            f"| **总通过率** | **{r.overall_pass_rate:.1%}** |",
+            "",
+            f"### 质量评级: {grade_text} ({r.overall_pass_rate * 100:.0f}分)",
+            "",
+        ]
+
+        if r.file_results:
+            lines.extend([
+                "---",
+                "",
+                "## 文件明细",
+                "",
+                "| 文件 | 样本数 | 通过率 | 错误 | 警告 | 状态 |",
+                "|------|--------|--------|------|------|------|",
+            ])
+            for path, fr in r.file_results.items():
+                status = "✅" if fr.error_count == 0 else "❌"
+                lines.append(
+                    f"| {path} | {fr.total_samples} | {fr.pass_rate:.1%} "
+                    f"| {fr.error_count} | {fr.warning_count} | {status} |"
+                )
+            lines.append("")
+
+        if r.skipped_files:
+            lines.extend(["---", "", "## 跳过文件", ""])
+            for s in r.skipped_files:
+                lines.append(f"- {s}")
+            lines.append("")
+
+        lines.extend(["", "---", "", "> 报告由 DataCheck 自动生成"])
+        return "\n".join(lines)
+
+    def to_html(self) -> str:
+        """Generate self-contained HTML report."""
+        r = self.result
+        grade_text, grade_color = _grade(r.overall_pass_rate)
+        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        file_rows = ""
+        for path, fr in r.file_results.items():
+            status = "PASS" if fr.error_count == 0 else "FAIL"
+            status_cls = "pass" if fr.error_count == 0 else "fail"
+            file_rows += (
+                f"<tr><td>{path}</td><td>{fr.total_samples}</td>"
+                f"<td>{fr.pass_rate:.1%}</td><td>{fr.error_count}</td>"
+                f"<td>{fr.warning_count}</td>"
+                f'<td><span class="status {status_cls}">{status}</span></td></tr>'
+            )
+
+        skipped_html = ""
+        if r.skipped_files:
+            items = "".join(f"<li>{s}</li>" for s in r.skipped_files)
+            skipped_html = f'<div class="section"><h2>跳过文件 ({len(r.skipped_files)})</h2><ul>{items}</ul></div>'
+
+        return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{self.title}</title>
+<style>
+  *{{margin:0;padding:0;box-sizing:border-box}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f8fafc;color:#1e293b;padding:2rem}}
+  .container{{max-width:960px;margin:0 auto}}
+  h1{{font-size:1.5rem;margin-bottom:.5rem}}
+  .meta{{color:#64748b;font-size:.875rem;margin-bottom:1.5rem}}
+  .summary{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin-bottom:1.5rem}}
+  .card{{background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,.1);text-align:center}}
+  .card .value{{font-size:1.5rem;font-weight:700}} .card .label{{font-size:.75rem;color:#64748b;margin-top:.25rem}}
+  .grade{{color:{grade_color}}}
+  .section{{background:#fff;border-radius:8px;padding:1.5rem;margin-bottom:1.5rem;box-shadow:0 1px 3px rgba(0,0,0,.1)}}
+  .section h2{{font-size:1.1rem;margin-bottom:1rem}}
+  table{{width:100%;border-collapse:collapse;font-size:.875rem}}
+  th,td{{padding:.5rem .75rem;text-align:left;border-bottom:1px solid #e2e8f0}}
+  th{{background:#f1f5f9;font-weight:600}}
+  .status{{font-weight:600}} .status.pass{{color:#22c55e}} .status.fail{{color:#ef4444}}
+  ul{{padding-left:1.5rem}} li{{margin-bottom:.25rem}}
+  .footer{{text-align:center;color:#94a3b8;font-size:.75rem;margin-top:2rem}}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>{self.title}</h1>
+  <div class="meta">生成时间: {generated_at} &middot; 目录: {r.directory}</div>
+  <div class="summary">
+    <div class="card"><div class="value">{r.total_files}</div><div class="label">文件数</div></div>
+    <div class="card"><div class="value">{r.total_samples}</div><div class="label">总样本</div></div>
+    <div class="card"><div class="value">{r.total_passed_samples}</div><div class="label">通过</div></div>
+    <div class="card"><div class="value">{r.total_failed_samples}</div><div class="label">失败</div></div>
+    <div class="card"><div class="value grade">{r.overall_pass_rate:.1%}</div><div class="label">通过率</div></div>
+    <div class="card"><div class="value grade">{grade_text.split()[-1]}</div><div class="label">评级</div></div>
+  </div>
+  <div class="section">
+    <h2>文件明细</h2>
+    <table>
+      <tr><th>文件</th><th>样本数</th><th>通过率</th><th>错误</th><th>警告</th><th>状态</th></tr>
+      {file_rows}
+    </table>
+  </div>
+  {skipped_html}
+  <div class="footer">报告由 DataCheck 自动生成</div>
+</div>
+</body>
+</html>"""
+
+    def to_json(self) -> Dict[str, Any]:
+        """Generate JSON report."""
+        r = self.result
+        files = {}
+        for path, fr in r.file_results.items():
+            files[path] = {
+                "summary": {
+                    "total_samples": fr.total_samples,
+                    "passed_samples": fr.passed_samples,
+                    "failed_samples": fr.failed_samples,
+                    "pass_rate": fr.pass_rate,
+                    "error_count": fr.error_count,
+                    "warning_count": fr.warning_count,
+                },
+                "rule_results": fr.rule_results,
+                "duplicates": fr.duplicates,
+            }
+        return {
+            "title": self.title,
+            "generated_at": datetime.now().isoformat(),
+            "aggregate": {
+                "total_files": r.total_files,
+                "passed_files": r.passed_files,
+                "failed_files": r.failed_files,
+                "total_samples": r.total_samples,
+                "total_passed_samples": r.total_passed_samples,
+                "total_failed_samples": r.total_failed_samples,
+                "overall_pass_rate": r.overall_pass_rate,
+                "total_error_count": r.total_error_count,
+                "total_warning_count": r.total_warning_count,
+            },
+            "files": files,
+            "skipped_files": r.skipped_files,
+        }
+
+    def save(self, output_path: str, format: str = "markdown"):
+        """Save report to file."""
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if format == "json":
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(self.to_json(), f, indent=2, ensure_ascii=False)
+        elif format == "html":
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(self.to_html())
+        else:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(self.to_markdown())
+
+    def print_summary(self):
+        """Print summary to console."""
+        r = self.result
+        grade_text, _ = _grade(r.overall_pass_rate)
+        print(f"\n{'=' * 50}")
+        print("  批量数据质量检查结果")
+        print(f"{'=' * 50}")
+        print(f"  文件数: {r.total_files}")
+        print(f"  总样本: {r.total_samples}")
+        print(f"  通过: {r.total_passed_samples}")
+        print(f"  失败: {r.total_failed_samples}")
+        print(f"  通过率: {r.overall_pass_rate:.1%}")
+        print(f"  评级: {grade_text}")
+        print(f"{'=' * 50}\n")

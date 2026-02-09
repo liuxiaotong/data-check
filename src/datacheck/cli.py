@@ -8,7 +8,7 @@ import click
 
 from datacheck import __version__
 from datacheck.checker import DataChecker
-from datacheck.report import QualityReport
+from datacheck.report import BatchQualityReport, QualityReport
 from datacheck.rules import RuleSet, get_sft_ruleset, get_preference_ruleset, get_llm_ruleset
 
 
@@ -41,6 +41,7 @@ def main():
 @click.option("--sample-rate", type=float, default=None, help="随机抽样比例 (0-1)")
 @click.option("--threshold", type=float, default=0.5, show_default=True, help="最低通过率阈值，低于此值退出码为 1")
 @click.option("--strict", is_flag=True, default=False, help="严格模式: 任何错误或警告都返回退出码 1")
+@click.option("--pattern", type=str, default=None, help="目录模式下的文件匹配，逗号分隔 (默认: *.json,*.jsonl,*.csv)")
 def check(
     data_path: str,
     schema: Optional[str],
@@ -52,10 +53,11 @@ def check(
     sample_rate: Optional[float],
     threshold: float,
     strict: bool,
+    pattern: Optional[str],
 ):
     """检查数据文件质量
 
-    DATA_PATH: 数据文件路径 (JSON/JSONL/CSV)
+    DATA_PATH: 数据文件或目录路径 (JSON/JSONL/CSV)
     """
     # Select ruleset
     if rules_file:
@@ -70,6 +72,46 @@ def check(
         rules = RuleSet()
 
     checker = DataChecker(rules)
+
+    # Directory mode
+    path = Path(data_path)
+    if path.is_dir():
+        patterns = [p.strip() for p in pattern.split(",")] if pattern else None
+
+        def on_file_start(rel_path, idx, total):
+            click.echo(f"[{idx}/{total}] 正在检查 {rel_path}...")
+
+        batch_result = checker.check_directory(
+            data_path, schema_path=schema, patterns=patterns,
+            sample_count=sample, sample_rate=sample_rate,
+            on_file_start=on_file_start,
+        )
+
+        report = BatchQualityReport(batch_result)
+
+        if output:
+            report.save(output, format)
+            click.echo(f"✓ 报告已保存: {output}")
+
+        report.print_summary()
+
+        # Per-file summary
+        for fp, fr in batch_result.file_results.items():
+            status = "✅" if fr.error_count == 0 else "❌"
+            click.echo(f"  {status} {fp}: {fr.pass_rate:.1%} ({fr.total_samples} 样本)")
+
+        if batch_result.skipped_files:
+            click.echo(f"\n⚠️  跳过 {len(batch_result.skipped_files)} 个文件")
+
+        # Exit code
+        if strict and (batch_result.total_error_count > 0 or batch_result.total_warning_count > 0):
+            click.echo("严格模式: 检测到错误或警告，退出码 1")
+            sys.exit(1)
+        for fp, fr in batch_result.file_results.items():
+            if fr.pass_rate < threshold:
+                click.echo(f"文件 {fp} 通过率 {fr.pass_rate:.1%} 低于阈值 {threshold:.1%}，退出码 1")
+                sys.exit(1)
+        return
 
     click.echo(f"正在检查 {data_path}...")
 

@@ -141,6 +141,37 @@ def create_server() -> "Server":
                     "required": ["data_path", "output_path"],
                 },
             ),
+            Tool(
+                name="batch_check_directory",
+                description="批量检查目录下所有数据文件的质量 (递归扫描 JSON/JSONL/CSV)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "directory": {
+                            "type": "string",
+                            "description": "要检查的目录路径",
+                        },
+                        "schema_path": {
+                            "type": "string",
+                            "description": "Schema 文件路径（可选）",
+                        },
+                        "ruleset": {
+                            "type": "string",
+                            "enum": ["default", "sft", "preference"],
+                            "description": "规则集（默认: default）",
+                        },
+                        "pattern": {
+                            "type": "string",
+                            "description": "文件匹配模式，逗号分隔（默认: *.json,*.jsonl,*.csv）",
+                        },
+                        "sample_count": {
+                            "type": "integer",
+                            "description": "每个文件的随机抽样数量（可选）",
+                        },
+                    },
+                    "required": ["directory"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -384,6 +415,53 @@ def create_server() -> "Server":
             if result.pii_redacted_count:
                 lines.append(f"- PII 脱敏: {result.pii_redacted_count} 个字段")
             lines.extend(["", f"输出文件: {arguments['output_path']}"])
+
+            return [TextContent(type="text", text="\n".join(lines))]
+
+        elif name == "batch_check_directory":
+            ruleset_name = arguments.get("ruleset", "default")
+            if ruleset_name == "sft":
+                rules = get_sft_ruleset()
+            elif ruleset_name == "preference":
+                rules = get_preference_ruleset()
+            else:
+                rules = RuleSet()
+
+            checker = DataChecker(rules)
+            pat = arguments.get("pattern")
+            patterns = [p.strip() for p in pat.split(",")] if pat else None
+
+            batch_result = checker.check_directory(
+                arguments["directory"],
+                schema_path=arguments.get("schema_path"),
+                patterns=patterns,
+                sample_count=arguments.get("sample_count"),
+            )
+
+            lines = [
+                "## 批量数据质量检查结果",
+                "",
+                f"- 目录: `{batch_result.directory}`",
+                f"- 文件数: {batch_result.total_files}",
+                f"- 总样本: {batch_result.total_samples}",
+                f"- **总通过率: {batch_result.overall_pass_rate:.1%}**",
+                "",
+                "### 文件明细",
+                "",
+                "| 文件 | 样本数 | 通过率 | 错误 | 警告 |",
+                "|------|--------|--------|------|------|",
+            ]
+
+            for fp, fr in batch_result.file_results.items():
+                lines.append(
+                    f"| {fp} | {fr.total_samples} | {fr.pass_rate:.1%} "
+                    f"| {fr.error_count} | {fr.warning_count} |"
+                )
+
+            if batch_result.skipped_files:
+                lines.extend(["", f"### 跳过文件 ({len(batch_result.skipped_files)})"])
+                for s in batch_result.skipped_files:
+                    lines.append(f"- {s}")
 
             return [TextContent(type="text", text="\n".join(lines))]
 
