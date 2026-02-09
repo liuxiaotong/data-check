@@ -250,3 +250,116 @@ class TestRuleSet:
 
         ruleset.add_rule(custom_rule)
         assert "custom_rule" in ruleset.rules
+
+
+class TestInferSchema:
+    """Tests for schema inference."""
+
+    def test_infer_basic_types(self):
+        samples = [
+            {"data": {"name": "Alice", "age": 30, "score": 4.5}},
+            {"data": {"name": "Bob", "age": 25, "score": 3.8}},
+        ]
+        schema = DataChecker.infer_schema(samples)
+
+        assert "fields" in schema
+        assert schema["fields"]["name"]["type"] == "string"
+        assert schema["fields"]["age"]["type"] == "integer"
+        assert schema["fields"]["score"]["type"] == "number"
+
+    def test_infer_required_fields(self):
+        samples = [{"data": {"a": "x", "b": "y"}} for _ in range(20)]
+        # Add one missing 'b'
+        samples.append({"data": {"a": "x"}})
+        schema = DataChecker.infer_schema(samples)
+
+        assert schema["fields"]["a"]["required"] is True
+        # b present in 20/21 = 95.2%, still required
+        assert schema["fields"]["b"]["required"] is True
+
+    def test_infer_string_length(self):
+        samples = [
+            {"data": {"text": "hi"}},
+            {"data": {"text": "hello world"}},
+        ]
+        schema = DataChecker.infer_schema(samples)
+
+        assert schema["fields"]["text"]["min_length"] == 2
+        assert schema["fields"]["text"]["max_length"] == 11
+
+    def test_infer_enum_values(self):
+        samples = [
+            {"data": {"score": 1}},
+            {"data": {"score": 2}},
+            {"data": {"score": 3}},
+            {"data": {"score": 1}},
+        ]
+        schema = DataChecker.infer_schema(samples)
+
+        assert "enum" in schema["fields"]["score"]
+        assert sorted(schema["fields"]["score"]["enum"]) == [1, 2, 3]
+
+    def test_infer_empty_samples(self):
+        schema = DataChecker.infer_schema([])
+        assert schema["fields"] == {}
+        assert schema["sample_count"] == 0
+
+    def test_infer_schema_file(self, tmp_path):
+        data = [
+            {"instruction": "Q1", "response": "A1", "score": 5},
+            {"instruction": "Q2", "response": "A2", "score": 4},
+        ]
+        path = tmp_path / "data.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        output = tmp_path / "schema.json"
+        checker = DataChecker()
+        schema = checker.infer_schema_file(str(path), str(output))
+
+        assert output.exists()
+        assert "fields" in schema
+        assert "instruction" in schema["fields"]
+
+    def test_infer_nullable_field(self):
+        samples = [
+            {"data": {"a": "x", "b": None}},
+            {"data": {"a": "y", "b": "z"}},
+        ]
+        schema = DataChecker.infer_schema(samples)
+        assert schema["fields"]["b"].get("nullable") is True
+
+
+class TestProgressCallback:
+    """Tests for progress callback."""
+
+    def test_progress_called(self, tmp_path):
+        data = [{"instruction": f"Q{i}", "response": f"A{i}"} for i in range(10)]
+        path = tmp_path / "data.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        progress_calls = []
+
+        def on_progress(current, total):
+            progress_calls.append((current, total))
+
+        checker = DataChecker()
+        checker.check_file(str(path), on_progress=on_progress)
+
+        assert len(progress_calls) == 10
+        assert progress_calls[0] == (1, 10)
+        assert progress_calls[-1] == (10, 10)
+
+    def test_progress_with_sampling(self, tmp_path):
+        data = [{"instruction": f"Q{i}", "response": f"A{i}"} for i in range(100)]
+        path = tmp_path / "data.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+        progress_calls = []
+
+        def on_progress(current, total):
+            progress_calls.append((current, total))
+
+        checker = DataChecker()
+        checker.check_file(str(path), sample_count=10, on_progress=on_progress)
+
+        assert len(progress_calls) == 10

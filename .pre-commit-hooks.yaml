@@ -1,0 +1,6 @@
+- id: datacheck
+  name: DataCheck quality check
+  entry: knowlyr-datacheck check
+  language: python
+  files: '\.(json|jsonl|csv)$'
+  additional_dependencies: ['knowlyr-datacheck']

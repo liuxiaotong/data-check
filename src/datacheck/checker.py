@@ -193,6 +193,7 @@ class DataChecker:
         output_path: Optional[str] = None,
         sample_count: Optional[int] = None,
         sample_rate: Optional[float] = None,
+        on_progress: Optional[Callable[[int, int], None]] = None,
     ) -> CheckResult:
         """Check a data file.
 
@@ -232,7 +233,7 @@ class DataChecker:
             sampled = True
 
         # Run check
-        result = self.check(samples, schema)
+        result = self.check(samples, schema, on_progress=on_progress)
 
         if sampled:
             result.sampled = True
@@ -467,6 +468,113 @@ class DataChecker:
             comparison["field_comparisons"][field_name] = field_comparison
 
         return comparison
+
+    @staticmethod
+    def infer_schema(samples: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Infer schema from sample data.
+
+        Detects field names, types, constraints, and generates a schema
+        compatible with DataCheck's validation format.
+
+        Args:
+            samples: List of sample dicts
+
+        Returns:
+            Inferred schema dict
+        """
+        if not samples:
+            return {"fields": {}, "sample_count": 0}
+
+        field_stats: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {"count": 0, "types": Counter(), "lengths": [], "values": []}
+        )
+
+        for sample in samples:
+            data = sample.get("data", sample)
+            for key, value in data.items():
+                fs = field_stats[key]
+                fs["count"] += 1
+
+                if value is None:
+                    fs["types"]["null"] += 1
+                elif isinstance(value, str):
+                    fs["types"]["string"] += 1
+                    fs["lengths"].append(len(value))
+                elif isinstance(value, bool):
+                    fs["types"]["boolean"] += 1
+                elif isinstance(value, int):
+                    fs["types"]["integer"] += 1
+                    fs["values"].append(value)
+                elif isinstance(value, float):
+                    fs["types"]["number"] += 1
+                    fs["values"].append(value)
+                elif isinstance(value, list):
+                    fs["types"]["array"] += 1
+                elif isinstance(value, dict):
+                    fs["types"]["object"] += 1
+
+        total = len(samples)
+        fields = {}
+
+        for fname, fs in field_stats.items():
+            # Determine primary type (most common non-null type)
+            type_counts = {k: v for k, v in fs["types"].items() if k != "null"}
+            primary_type = max(type_counts, key=type_counts.get) if type_counts else "string"
+
+            field_def: Dict[str, Any] = {"type": primary_type}
+
+            # Required if present in >= 95% of samples
+            presence_rate = fs["count"] / total
+            if presence_rate >= 0.95:
+                field_def["required"] = True
+
+            # Null rate
+            null_count = fs["types"].get("null", 0)
+            if null_count > 0:
+                field_def["nullable"] = True
+
+            # String constraints
+            if primary_type == "string" and fs["lengths"]:
+                field_def["min_length"] = min(fs["lengths"])
+                field_def["max_length"] = max(fs["lengths"])
+                field_def["avg_length"] = round(sum(fs["lengths"]) / len(fs["lengths"]))
+
+            # Number constraints
+            if primary_type in ("integer", "number") and fs["values"]:
+                field_def["min_value"] = min(fs["values"])
+                field_def["max_value"] = max(fs["values"])
+                # If values are within a small set, suggest enum
+                unique_vals = set(fs["values"])
+                if len(unique_vals) <= 10:
+                    field_def["enum"] = sorted(unique_vals)
+
+            fields[fname] = field_def
+
+        return {
+            "sample_count": total,
+            "fields": fields,
+        }
+
+    def infer_schema_file(self, data_path: str, output_path: Optional[str] = None) -> Dict[str, Any]:
+        """Infer schema from a data file.
+
+        Args:
+            data_path: Path to data file (JSON/JSONL/CSV)
+            output_path: Optional path to save schema
+
+        Returns:
+            Inferred schema dict
+        """
+        samples, _ = self._load_data(Path(data_path))
+        schema = self.infer_schema(samples)
+
+        if output_path:
+            out = Path(output_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with open(out, "w", encoding="utf-8") as f:
+                json.dump(schema, f, indent=2, ensure_ascii=False)
+
+        return schema
 
     def _save_report(self, result: CheckResult, output_path: str):
         """Save check report to file."""

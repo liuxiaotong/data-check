@@ -116,3 +116,61 @@ class TestQualityReport:
         md = report.to_markdown()
 
         assert "自定义标题" in md
+
+
+class TestHTMLReport:
+    """Tests for HTML report generation."""
+
+    def test_to_html_basic(self, sample_result):
+        report = QualityReport(sample_result)
+        html = report.to_html()
+
+        assert "<!DOCTYPE html>" in html
+        assert "数据质量报告" in html
+        assert "92.0%" in html
+
+    def test_html_contains_rules(self, sample_result):
+        report = QualityReport(sample_result)
+        html = report.to_html()
+
+        assert "必填字段检查" in html
+        assert "非空检查" in html
+
+    def test_html_contains_duplicates(self, sample_result):
+        report = QualityReport(sample_result)
+        html = report.to_html()
+
+        assert "重复检测" in html
+        assert "sample_5" in html
+
+    def test_html_grade_colors(self):
+        # Excellent
+        result = CheckResult(pass_rate=0.95, total_samples=100)
+        html = QualityReport(result).to_html()
+        assert "优秀" in html
+        assert "#22c55e" in html
+
+        # Needs improvement
+        result = CheckResult(pass_rate=0.3, total_samples=100)
+        html = QualityReport(result).to_html()
+        assert "需改进" in html
+        assert "#ef4444" in html
+
+    def test_save_html(self, sample_result):
+        report = QualityReport(sample_result)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "report.html"
+            report.save(str(output_path), "html")
+
+            assert output_path.exists()
+            content = output_path.read_text()
+            assert "<!DOCTYPE html>" in content
+
+    def test_html_sampling_notice(self):
+        result = CheckResult(
+            pass_rate=1.0, total_samples=10,
+            sampled=True, sampled_count=10, original_count=100,
+        )
+        html = QualityReport(result).to_html()
+        assert "10/100" in html

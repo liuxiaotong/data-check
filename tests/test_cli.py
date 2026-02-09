@@ -93,3 +93,93 @@ class TestRulesFile:
         )
         # Should complete (rules file loaded successfully)
         assert "正在检查" in result.output
+
+
+class TestInferCommand:
+    """Tests for the infer command."""
+
+    def test_infer_stdout(self, runner, valid_data_file):
+        result = runner.invoke(main, ["infer", valid_data_file])
+        assert result.exit_code == 0
+        assert "推断完成" in result.output
+        assert "instruction" in result.output
+
+    def test_infer_to_file(self, runner, valid_data_file, tmp_path):
+        output = str(tmp_path / "schema.json")
+        result = runner.invoke(main, ["infer", valid_data_file, "-o", output])
+        assert result.exit_code == 0
+        assert "Schema 已保存" in result.output
+
+        import json
+        from pathlib import Path
+        schema = json.loads(Path(output).read_text())
+        assert "fields" in schema
+
+
+class TestFixCommand:
+    """Tests for the fix command."""
+
+    def test_fix_basic(self, runner, tmp_path):
+        data = [
+            {"instruction": "Q1", "response": "A1"},
+            {"instruction": "Q1", "response": "A1"},
+            {"instruction": "  Q2  ", "response": "A2"},
+        ]
+        data_path = tmp_path / "data.json"
+        data_path.write_text(json.dumps(data), encoding="utf-8")
+
+        output = str(tmp_path / "fixed.jsonl")
+        result = runner.invoke(main, ["fix", str(data_path), "-o", output])
+        assert result.exit_code == 0
+        assert "修复完成" in result.output
+        assert "去除重复" in result.output
+
+    def test_fix_with_pii(self, runner, tmp_path):
+        data = [{"text": "Email me at user@example.com"}]
+        data_path = tmp_path / "data.json"
+        data_path.write_text(json.dumps(data), encoding="utf-8")
+
+        output = str(tmp_path / "fixed.jsonl")
+        result = runner.invoke(main, ["fix", str(data_path), "-o", output, "--strip-pii"])
+        assert result.exit_code == 0
+        assert "PII 脱敏" in result.output
+
+
+class TestHTMLFormat:
+    """Tests for HTML format in check command."""
+
+    def test_check_html_output(self, runner, valid_data_file, tmp_path):
+        output = str(tmp_path / "report.html")
+        result = runner.invoke(main, ["check", valid_data_file, "-f", "html", "-o", output])
+        assert result.exit_code == 0
+
+        from pathlib import Path
+        content = Path(output).read_text()
+        assert "<!DOCTYPE html>" in content
+
+
+class TestCompareCommand:
+    """Tests for the compare command."""
+
+    def test_compare_two_files(self, runner, tmp_path):
+        data1 = [{"instruction": "Q1", "response": "A1"}]
+        data2 = [{"instruction": "Q2", "response": "A2"}, {"instruction": "Q3", "response": "A3"}]
+
+        f1 = tmp_path / "data1.json"
+        f2 = tmp_path / "data2.json"
+        f1.write_text(json.dumps(data1), encoding="utf-8")
+        f2.write_text(json.dumps(data2), encoding="utf-8")
+
+        result = runner.invoke(main, ["compare", str(f1), str(f2)])
+        assert result.exit_code == 0
+        assert "数据分布对比报告" in result.output
+
+
+class TestRulesCommand:
+    """Tests for the rules command."""
+
+    def test_list_rules(self, runner):
+        result = runner.invoke(main, ["rules"])
+        assert result.exit_code == 0
+        assert "可用规则" in result.output
+        assert "预设规则集" in result.output

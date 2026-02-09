@@ -8,6 +8,7 @@ __version__ = "0.2.0"
 from datacheck.checker import DataChecker, CheckResult
 from datacheck.rules import Rule, RuleSet
 from datacheck.report import QualityReport
+from datacheck.fixer import DataFixer, FixResult
 
 __all__ = [
     "DataChecker",
@@ -15,5 +16,7 @@ __all__ = [
     "Rule",
     "RuleSet",
     "QualityReport",
+    "DataFixer",
+    "FixResult",
     "__version__",
 ]

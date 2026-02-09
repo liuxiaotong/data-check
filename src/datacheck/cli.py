@@ -27,7 +27,8 @@ def main():
 @click.option("-s", "--schema", type=click.Path(exists=True), help="Schema 文件路径")
 @click.option("-o", "--output", type=click.Path(), help="报告输出路径")
 @click.option(
-    "-f", "--format", type=click.Choice(["markdown", "json"]), default="markdown", help="报告格式"
+    "-f", "--format",
+    type=click.Choice(["markdown", "json", "html"]), default="markdown", help="报告格式",
 )
 @click.option(
     "--ruleset",
@@ -70,7 +71,28 @@ def check(
 
     click.echo(f"正在检查 {data_path}...")
 
-    result = checker.check_file(data_path, schema, sample_count=sample, sample_rate=sample_rate)
+    # Progress callback - shows progress bar for large datasets
+    progress_bar = [None]  # mutable container for closure
+
+    def on_progress(current, total):
+        if progress_bar[0] is None:
+            if total > 100:
+                progress_bar[0] = click.progressbar(
+                    length=total, label="检查进度", file=sys.stderr,
+                )
+                progress_bar[0].__enter__()
+            else:
+                return
+        progress_bar[0].update(1)
+
+    try:
+        result = checker.check_file(
+            data_path, schema, sample_count=sample, sample_rate=sample_rate,
+            on_progress=on_progress,
+        )
+    finally:
+        if progress_bar[0] is not None:
+            progress_bar[0].__exit__(None, None, None)
 
     if not result.success:
         click.echo(f"✗ 检查失败: {result.error}", err=True)
@@ -114,7 +136,7 @@ def check(
 )
 @click.option("-o", "--output", type=click.Path(), help="报告输出路径")
 @click.option(
-    "-f", "--format", type=click.Choice(["markdown", "json"]), default="markdown", help="报告格式"
+    "-f", "--format", type=click.Choice(["markdown", "json", "html"]), default="markdown", help="报告格式"
 )
 @click.option("--threshold", type=float, default=0.5, show_default=True, help="最低通过率阈值，低于此值退出码为 1")
 @click.option("--strict", is_flag=True, default=False, help="严格模式: 任何错误或警告都返回退出码 1")
@@ -147,7 +169,7 @@ def validate(
     if output is None:
         output_dir = Path(analysis_dir) / "12_质检报告"
         output_dir.mkdir(exist_ok=True)
-        ext = "md" if format == "markdown" else "json"
+        ext = {"markdown": "md", "json": "json", "html": "html"}[format]
         output = output_dir / f"quality_report.{ext}"
 
     report.save(str(output), format)
@@ -268,6 +290,68 @@ def rules():
     click.echo("  - default: 通用规则")
     click.echo("  - sft: SFT 数据规则")
     click.echo("  - preference: 偏好数据规则")
+
+
+@main.command()
+@click.argument("data_path", type=click.Path(exists=True))
+@click.option("-o", "--output", type=click.Path(), help="Schema 输出路径 (JSON)")
+def infer(data_path: str, output: Optional[str]):
+    """从数据文件推断 Schema
+
+    DATA_PATH: 数据文件路径 (JSON/JSONL/CSV)
+    """
+    checker = DataChecker()
+
+    click.echo(f"正在推断 {data_path} 的 Schema...")
+
+    schema = checker.infer_schema_file(data_path, output)
+
+    field_count = len(schema.get("fields", {}))
+    required_count = sum(1 for f in schema.get("fields", {}).values() if f.get("required"))
+
+    click.echo(f"✓ 推断完成: {field_count} 个字段, {required_count} 个必填")
+
+    if output:
+        click.echo(f"  Schema 已保存: {output}")
+    else:
+        import json
+        click.echo(json.dumps(schema, indent=2, ensure_ascii=False))
+
+
+@main.command()
+@click.argument("data_path", type=click.Path(exists=True))
+@click.option("-o", "--output", type=click.Path(), required=True, help="修复后文件输出路径 (JSONL)")
+@click.option("--no-dedup", is_flag=True, default=False, help="不去除重复")
+@click.option("--no-trim", is_flag=True, default=False, help="不去除空白")
+@click.option("--strip-pii", is_flag=True, default=False, help="脱敏 PII 信息")
+def fix(data_path: str, output: str, no_dedup: bool, no_trim: bool, strip_pii: bool):
+    """修复数据文件常见质量问题
+
+    DATA_PATH: 数据文件路径 (JSON/JSONL/CSV)
+    """
+    from datacheck.fixer import DataFixer
+
+    fixer = DataFixer()
+
+    click.echo(f"正在修复 {data_path}...")
+
+    result = fixer.fix_file(
+        data_path, output,
+        dedup=not no_dedup,
+        trim=not no_trim,
+        strip_pii=strip_pii,
+    )
+
+    click.echo(f"✓ 修复完成: {result.total_input} → {result.total_output} 样本")
+    if result.duplicates_removed:
+        click.echo(f"  去除重复: {result.duplicates_removed}")
+    if result.trimmed_count:
+        click.echo(f"  修剪空白: {result.trimmed_count} 个字段")
+    if result.empty_removed:
+        click.echo(f"  移除空样本: {result.empty_removed}")
+    if result.pii_redacted_count:
+        click.echo(f"  PII 脱敏: {result.pii_redacted_count} 个字段")
+    click.echo(f"  输出文件: {output}")
 
 
 if __name__ == "__main__":
