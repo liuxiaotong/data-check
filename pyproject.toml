@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "knowlyr-datacheck"
-version = "0.3.0"
+version = "0.4.0"
 description = "Data quality inspection toolkit - automated validation, anomaly detection, and distribution analysis"
 readme = "README.md"
 license = "MIT"
