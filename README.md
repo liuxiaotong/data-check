@@ -2,8 +2,8 @@
 
 # DataCheck
 
-**数据质检工具 - 自动化质量检查、异常检测、分布分析**  
-**Automated QA for LLM datasets – rules, anomaly checks, distribution analysis**
+**数据质检工具 — 自动化质量检查、异常检测、分布分析**
+**Automated quality checks, anomaly detection & distribution analysis for LLM datasets**
 
 [![PyPI](https://img.shields.io/pypi/v/knowlyr-datacheck?color=blue)](https://pypi.org/project/knowlyr-datacheck/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
