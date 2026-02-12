@@ -52,3 +52,5 @@ env/
 # Linting / type checking
 .mypy_cache/
 .ruff_cache/
+
+.claude/
