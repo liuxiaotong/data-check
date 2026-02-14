@@ -400,6 +400,67 @@ def fix(data_path: str, output: str, no_dedup: bool, no_trim: bool, strip_pii: b
     click.echo(f"  输出文件: {output}")
 
 
+@main.command()
+@click.argument("responses_path", type=click.Path(exists=True))
+@click.option("-s", "--schema", type=click.Path(exists=True), help="DATA_SCHEMA.json 路径")
+@click.option("-o", "--output", type=click.Path(), help="确权结果输出路径 (JSON)")
+@click.option("--annotator", type=str, default="unknown", help="标注者 ID")
+@click.option("--created-at", type=str, default=None, help="数据集创建时间 (ISO 格式，用于时间乘数)")
+def contribute(
+    responses_path: str,
+    schema: Optional[str],
+    output: Optional[str],
+    annotator: str,
+    created_at: Optional[str],
+):
+    """质检 + 确权: 标注结果 → 贡献权重
+
+    RESPONSES_PATH: datalabel 导出的标注结果文件 (JSON)
+
+    流程: 标注结果 → annotation 规则集质检 → 通过的计算权重 → 输出 ContributionRecord
+
+    权重公式: weight = base × quality × time × scarcity
+    """
+    import json
+
+    from datacheck.contribute import calculate_contributions, contributions_to_json
+
+    click.echo(f"正在确权 {responses_path}...")
+
+    result = calculate_contributions(
+        responses_path,
+        schema_path=schema,
+        dataset_created_at=created_at,
+        annotator_id=annotator,
+    )
+
+    # 输出摘要
+    click.echo(f"\n{'─' * 40}")
+    click.echo(f"  标注总数:   {result.total_responses}")
+    click.echo(f"  质检通过:   {result.passed_responses}")
+    click.echo(f"  质检未通过: {result.failed_responses}")
+    if result.check_result:
+        click.echo(f"  通过率:     {result.check_result.pass_rate:.1%}")
+    click.echo(f"{'─' * 40}")
+    click.echo(f"  确权记录:   {len(result.contributions)}")
+    click.echo(f"  总权重:     {result.total_weight:.2f}")
+
+    if result.contributions:
+        avg_weight = result.total_weight / len(result.contributions)
+        click.echo(f"  平均权重:   {avg_weight:.2f}")
+
+    # 输出到文件或 stdout
+    output_data = contributions_to_json(result)
+
+    if output:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(output_data, f, ensure_ascii=False, indent=2)
+        click.echo(f"\n✓ 确权结果已保存: {output}")
+    else:
+        click.echo(f"\n{json.dumps(output_data, ensure_ascii=False, indent=2)}")
+
+
 @main.command(name="diff")
 @click.argument("report_a", type=click.Path(exists=True))
 @click.argument("report_b", type=click.Path(exists=True))

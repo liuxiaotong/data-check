@@ -9,6 +9,7 @@ from datacheck.checker import DataChecker, CheckResult, BatchCheckResult
 from datacheck.rules import Rule, RuleSet
 from datacheck.report import QualityReport, BatchQualityReport
 from datacheck.fixer import DataFixer, FixResult
+from datacheck.contribute import calculate_contributions, ContributionRecord, ContributeResult
 
 __all__ = [
     "DataChecker",
@@ -20,5 +21,8 @@ __all__ = [
     "BatchQualityReport",
     "DataFixer",
     "FixResult",
+    "calculate_contributions",
+    "ContributionRecord",
+    "ContributeResult",
     "__version__",
 ]
