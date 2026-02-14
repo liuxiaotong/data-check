@@ -11,7 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 <br/>
 [![CI](https://github.com/liuxiaotong/data-check/actions/workflows/ci.yml/badge.svg)](https://github.com/liuxiaotong/data-check/actions/workflows/ci.yml)
-[![MCP](https://img.shields.io/badge/MCP-7_Tools-purple.svg)](#mcp-server)
+[![MCP](https://img.shields.io/badge/MCP-11_Tools-purple.svg)](#mcp-server)
 
 [快速开始](#快速开始) · [质量规则](#质量规则) · [异常检测](#异常检测--anomaly-detection) · [Watch 模式](#watch-模式--watch-mode) · [Schema 推断](#schema-推断--schema-inference) · [数据修复](#数据修复--data-fix) · [报告对比](#报告对比--report-diff) · [LLM 智能检查](#llm-智能检查--llm-quality-check) · [MCP Server](#mcp-server) · [GitHub Actions](#github-actions) · [生态](#data-pipeline-生态)
 
@@ -551,6 +551,10 @@ knowlyr-datacheck check data.json --ruleset llm --llm-model claude-sonnet-4-5-20
 | `fix_data` | 修复数据 (去重/去空白/PII 脱敏) |
 | `batch_check_directory` | 批量检查目录下所有数据文件 |
 | `list_quality_rules` | 列出所有质量检查规则 |
+| `check_drift` | 数据漂移检测（对比两个文件的字段分布差异） |
+| `check_leakage` | 数据泄漏检测（精确重复 + 近似重复） |
+| `check_bias` | 数据偏见检测（类别不平衡/文本长度/语种分布） |
+| `check_coverage` | 数据覆盖率检测（字段完整度/缺失值/唯一值） |
 
 ### 使用示例
 
@@ -814,7 +818,7 @@ src/datacheck/
 ├── fixer.py          # 数据修复 (去重、去空白、PII 脱敏)
 ├── report.py         # 报告生成 (Markdown / JSON / HTML / Diff)
 ├── cli.py            # CLI 命令行 (check/infer/fix/diff/validate/compare/watch/rules)
-└── mcp_server.py     # MCP Server (7 工具)
+└── mcp_server.py     # MCP Server (11 工具)
 ```
 
 </details>
