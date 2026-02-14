@@ -256,6 +256,24 @@ def create_server() -> "Server":
                     "required": ["data_path"],
                 },
             ),
+            Tool(
+                name="check_coverage",
+                description="检测数据集覆盖度 — 统计字段完整度、缺失值比例、唯一值分布",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "data_path": {
+                            "type": "string",
+                            "description": "数据文件路径 (JSON/JSONL/CSV)",
+                        },
+                        "sample_count": {
+                            "type": "integer",
+                            "description": "采样数量（可选，默认全量检测）",
+                        },
+                    },
+                    "required": ["data_path"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -760,6 +778,53 @@ def create_server() -> "Server":
                     for lang, cnt in lang_counter.most_common():
                         lines.append(f"- {lang}: {cnt} ({cnt / total_l * 100:.1f}%)")
                     lines.append("")
+
+            return [TextContent(type="text", text="\n".join(lines))]
+
+        elif name == "check_coverage":
+            checker = DataChecker()
+            samples, _ = checker._load_data(Path(arguments["data_path"]))
+            sample_count = arguments.get("sample_count")
+            if sample_count and sample_count < len(samples):
+                import random
+                samples = random.sample(samples, sample_count)
+
+            if not samples:
+                return [TextContent(type="text", text="错误: 数据文件为空")]
+
+            # Analyze field coverage
+            all_fields: Dict[str, Dict[str, int]] = {}
+            for s in samples:
+                for field in s:
+                    if field not in all_fields:
+                        all_fields[field] = {"present": 0, "non_empty": 0, "unique_values": set()}
+                    all_fields[field]["present"] += 1
+                    val = s[field]
+                    if val is not None and val != "" and val != []:
+                        all_fields[field]["non_empty"] += 1
+                        str_val = str(val)[:200]
+                        if len(all_fields[field]["unique_values"]) < 10000:
+                            all_fields[field]["unique_values"].add(str_val)
+
+            total = len(samples)
+            lines = [
+                "## 数据覆盖度检测", "",
+                f"- 文件: `{Path(arguments['data_path']).name}`",
+                f"- 样本数: {total}",
+                f"- 字段数: {len(all_fields)}", "",
+                "| 字段 | 出现率 | 非空率 | 唯一值数 |",
+                "|------|--------|--------|----------|",
+            ]
+            for field, stats in sorted(all_fields.items()):
+                presence = stats["present"] / total * 100
+                non_empty = stats["non_empty"] / total * 100
+                unique = len(stats["unique_values"])
+                lines.append(f"| {field} | {presence:.1f}% | {non_empty:.1f}% | {unique} |")
+
+            # Overall coverage
+            avg_presence = sum(s["present"] / total * 100 for s in all_fields.values()) / len(all_fields) if all_fields else 0
+            avg_non_empty = sum(s["non_empty"] / total * 100 for s in all_fields.values()) / len(all_fields) if all_fields else 0
+            lines.extend(["", f"**平均出现率: {avg_presence:.1f}%, 平均非空率: {avg_non_empty:.1f}%**"])
 
             return [TextContent(type="text", text="\n".join(lines))]
 
