@@ -1,5 +1,7 @@
 """DataCheck MCP Server - Model Context Protocol 服务."""
 
+import math
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -170,6 +172,88 @@ def create_server() -> "Server":
                         },
                     },
                     "required": ["directory"],
+                },
+            ),
+            Tool(
+                name="check_drift",
+                description="检测两个数据文件之间的分布漂移（数值统计差异、类别分布变化、文本特征对比）",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "data_path_a": {
+                            "type": "string",
+                            "description": "数据文件 A 路径 (JSON/JSONL/CSV)",
+                        },
+                        "data_path_b": {
+                            "type": "string",
+                            "description": "数据文件 B 路径 (JSON/JSONL/CSV)",
+                        },
+                        "fields": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "要对比的字段列表（可选，默认对比所有共有字段）",
+                        },
+                    },
+                    "required": ["data_path_a", "data_path_b"],
+                },
+            ),
+            Tool(
+                name="check_leakage",
+                description="检测训练集和测试集之间的数据泄漏（完全重复 + token Jaccard 近似重复）",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "train_path": {
+                            "type": "string",
+                            "description": "训练集文件路径 (JSON/JSONL/CSV)",
+                        },
+                        "test_path": {
+                            "type": "string",
+                            "description": "测试集文件路径 (JSON/JSONL/CSV)",
+                        },
+                        "key_fields": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "用于比较的字段（可选，自动检测文本字段）",
+                        },
+                        "threshold": {
+                            "type": "number",
+                            "description": "近似重复的 Jaccard 相似度阈值（默认 0.9）",
+                            "default": 0.9,
+                        },
+                    },
+                    "required": ["train_path", "test_path"],
+                },
+            ),
+            Tool(
+                name="check_bias",
+                description="检测数据集偏差（类别不均衡、文本长度分布偏差、语言分布偏差）",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "data_path": {
+                            "type": "string",
+                            "description": "数据文件路径 (JSON/JSONL/CSV)",
+                        },
+                        "label_field": {
+                            "type": "string",
+                            "description": "标签字段名（可选，自动检测）",
+                        },
+                        "text_field": {
+                            "type": "string",
+                            "description": "文本字段名（可选，自动检测）",
+                        },
+                        "dimensions": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["category", "length", "language", "all"],
+                            },
+                            "description": "检测维度（默认 all）",
+                            "default": ["all"],
+                        },
+                    },
+                    "required": ["data_path"],
                 },
             ),
         ]
@@ -462,6 +546,220 @@ def create_server() -> "Server":
                 lines.extend(["", f"### 跳过文件 ({len(batch_result.skipped_files)})"])
                 for s in batch_result.skipped_files:
                     lines.append(f"- {s}")
+
+            return [TextContent(type="text", text="\n".join(lines))]
+
+        elif name == "check_drift":
+            checker = DataChecker()
+            samples_a, _ = checker._load_data(Path(arguments["data_path_a"]))
+            samples_b, _ = checker._load_data(Path(arguments["data_path_b"]))
+            if not samples_a or not samples_b:
+                return [TextContent(type="text", text="错误: 数据文件为空")]
+
+            fields_a = set(samples_a[0].keys())
+            fields_b = set(samples_b[0].keys())
+            shared = sorted(fields_a & fields_b)
+            requested = arguments.get("fields")
+            if requested:
+                shared = [f for f in requested if f in shared]
+            if not shared:
+                return [TextContent(type="text", text="错误: 两个文件没有共有字段")]
+
+            def _classify(vals: list) -> str:
+                nums = [v for v in vals if isinstance(v, (int, float))]
+                if len(nums) > len(vals) * 0.5:
+                    return "numeric"
+                strs = [v for v in vals if isinstance(v, str)]
+                if strs:
+                    unique_ratio = len(set(strs)) / len(strs) if strs else 1
+                    if unique_ratio < 0.3:
+                        return "categorical"
+                    return "text"
+                return "text"
+
+            lines = [
+                "## 分布漂移检测结果", "",
+                f"- 文件 A: `{Path(arguments['data_path_a']).name}` ({len(samples_a)} 条)",
+                f"- 文件 B: `{Path(arguments['data_path_b']).name}` ({len(samples_b)} 条)",
+                f"- 共有字段: {len(shared)}", "",
+            ]
+            for field in shared:
+                vals_a = [s.get(field) for s in samples_a if field in s]
+                vals_b = [s.get(field) for s in samples_b if field in s]
+                ftype = _classify(vals_a + vals_b)
+                lines.append(f"### 字段: `{field}` (类型: {ftype})")
+                lines.append("")
+                if ftype == "numeric":
+                    for label, vals in [("A", vals_a), ("B", vals_b)]:
+                        nums = [v for v in vals if isinstance(v, (int, float))]
+                        if nums:
+                            avg = sum(nums) / len(nums)
+                            lines.append(f"- {label}: count={len(nums)}, mean={avg:.2f}, min={min(nums)}, max={max(nums)}")
+                elif ftype == "categorical":
+                    dist_a = Counter(str(v) for v in vals_a)
+                    dist_b = Counter(str(v) for v in vals_b)
+                    all_cats = sorted(set(list(dist_a.keys()) + list(dist_b.keys())))
+                    lines.append("| 类别 | A | B |")
+                    lines.append("|------|---|---|")
+                    for cat in all_cats[:20]:
+                        lines.append(f"| {cat} | {dist_a.get(cat, 0)} | {dist_b.get(cat, 0)} |")
+                else:
+                    for label, vals in [("A", vals_a), ("B", vals_b)]:
+                        lengths = [len(str(v)) for v in vals if v]
+                        if lengths:
+                            avg_len = sum(lengths) / len(lengths)
+                            lines.append(f"- {label}: count={len(lengths)}, avg_len={avg_len:.0f}")
+                lines.append("")
+            return [TextContent(type="text", text="\n".join(lines))]
+
+        elif name == "check_leakage":
+            checker = DataChecker()
+            train_samples, _ = checker._load_data(Path(arguments["train_path"]))
+            test_samples, _ = checker._load_data(Path(arguments["test_path"]))
+            if not train_samples or not test_samples:
+                return [TextContent(type="text", text="错误: 数据文件为空")]
+
+            threshold = arguments.get("threshold", 0.9)
+            key_fields = arguments.get("key_fields")
+            if not key_fields:
+                sample = train_samples[0]
+                key_fields = [k for k, v in sample.items() if isinstance(v, str) and len(v) > 10]
+                if not key_fields:
+                    key_fields = [k for k, v in sample.items() if isinstance(v, str)]
+            if not key_fields:
+                return [TextContent(type="text", text="错误: 未找到可比较的文本字段")]
+
+            def _make_key(s: dict, fields: list) -> str:
+                return "|||".join(str(s.get(f, "")).strip() for f in fields)
+
+            train_keys: Dict[str, int] = {}
+            for i, s in enumerate(train_samples):
+                k = _make_key(s, key_fields)
+                if k not in train_keys:
+                    train_keys[k] = i
+
+            exact_dupes = []
+            for j, s in enumerate(test_samples):
+                k = _make_key(s, key_fields)
+                if k in train_keys:
+                    exact_dupes.append((train_keys[k], j))
+
+            # Near-duplicate via Jaccard
+            def _tokenize(text: str) -> set:
+                return set(text.lower().split())
+
+            train_tokens = []
+            for s in train_samples[:5000]:
+                combined = " ".join(str(s.get(f, "")) for f in key_fields)
+                train_tokens.append(_tokenize(combined))
+
+            exact_test_idx = set(j for _, j in exact_dupes)
+            near_dupes = []
+            for j in range(min(len(test_samples), 500)):
+                if j in exact_test_idx:
+                    continue
+                test_tok = _tokenize(" ".join(str(test_samples[j].get(f, "")) for f in key_fields))
+                if not test_tok:
+                    continue
+                for i in range(len(train_tokens)):
+                    inter = len(test_tok & train_tokens[i])
+                    union = len(test_tok | train_tokens[i])
+                    sim = inter / union if union else 0
+                    if threshold <= sim < 1.0:
+                        near_dupes.append((i, j, sim))
+                        break
+
+            total = len(test_samples)
+            exact_rate = len(exact_dupes) / total * 100 if total else 0
+            near_rate = len(near_dupes) / total * 100 if total else 0
+            total_rate = (len(exact_dupes) + len(near_dupes)) / total * 100 if total else 0
+
+            lines = [
+                "## 数据泄漏检测结果", "",
+                f"- 训练集: {len(train_samples)} 条",
+                f"- 测试集: {len(test_samples)} 条",
+                f"- 比较字段: {', '.join(key_fields)}",
+                f"- 完全重复: {len(exact_dupes)} 条 ({exact_rate:.2f}%)",
+                f"- 近似重复: {len(near_dupes)} 条 ({near_rate:.2f}%)",
+                f"- **总泄漏: {len(exact_dupes) + len(near_dupes)} 条 ({total_rate:.2f}%)**",
+            ]
+            return [TextContent(type="text", text="\n".join(lines))]
+
+        elif name == "check_bias":
+            checker = DataChecker()
+            samples, _ = checker._load_data(Path(arguments["data_path"]))
+            if not samples:
+                return [TextContent(type="text", text="错误: 数据文件为空")]
+
+            label_field = arguments.get("label_field")
+            text_field = arguments.get("text_field")
+            dimensions = arguments.get("dimensions", ["all"])
+            if "all" in dimensions:
+                dimensions = ["category", "length", "language"]
+
+            if not label_field or not text_field:
+                sample = samples[0]
+                for k, v in sample.items():
+                    if not label_field and isinstance(v, str) and len(v) < 50:
+                        unique_vals = set(s.get(k, "") for s in samples[:200])
+                        if 2 <= len(unique_vals) <= 50:
+                            label_field = k
+                    if not text_field and isinstance(v, str) and len(v) >= 50:
+                        text_field = k
+
+            lines = [
+                "## 数据偏差检测结果", "",
+                f"- 文件: `{Path(arguments['data_path']).name}` ({len(samples)} 条)",
+                f"- 标签字段: `{label_field or '(未指定)'}`",
+                f"- 文本字段: `{text_field or '(未指定)'}`", "",
+            ]
+
+            if "category" in dimensions and label_field:
+                labels = [s.get(label_field) for s in samples if label_field in s]
+                counter = Counter(str(l) for l in labels if l is not None)
+                if counter:
+                    sorted_cats = counter.most_common()
+                    ratio = sorted_cats[0][1] / sorted_cats[-1][1] if sorted_cats[-1][1] > 0 else float("inf")
+                    lines.append("### 类别分布")
+                    lines.append(f"- 类别数: {len(counter)}, 不均衡比: {ratio:.1f}:1")
+                    lines.append("| 类别 | 数量 | 占比 |")
+                    lines.append("|------|------|------|")
+                    total = sum(counter.values())
+                    for cat, cnt in sorted_cats[:30]:
+                        lines.append(f"| {cat} | {cnt} | {cnt / total * 100:.1f}% |")
+                    lines.append("")
+
+            if "length" in dimensions and text_field:
+                lengths = [len(s.get(text_field, "")) for s in samples if isinstance(s.get(text_field), str)]
+                if lengths:
+                    avg = sum(lengths) / len(lengths)
+                    variance = sum((x - avg) ** 2 for x in lengths) / len(lengths)
+                    std = math.sqrt(variance)
+                    lines.append("### 文本长度分布")
+                    lines.append(f"- 平均: {avg:.0f}, 标准差: {std:.0f}, 范围: [{min(lengths)}, {max(lengths)}]")
+                    lines.append("")
+
+            if "language" in dimensions and text_field:
+                lang_counter: Counter = Counter()
+                for s in samples:
+                    text = s.get(text_field, "")
+                    if not isinstance(text, str) or not text:
+                        continue
+                    cjk = sum(1 for ch in text[:500] if "\u4e00" <= ch <= "\u9fff")
+                    latin = sum(1 for ch in text[:500] if "\u0041" <= ch <= "\u007a")
+                    total_c = cjk + latin or 1
+                    if cjk / total_c > 0.3:
+                        lang_counter["zh"] += 1
+                    elif latin / total_c > 0.3:
+                        lang_counter["en"] += 1
+                    else:
+                        lang_counter["other"] += 1
+                if lang_counter:
+                    lines.append("### 语言分布")
+                    total_l = sum(lang_counter.values())
+                    for lang, cnt in lang_counter.most_common():
+                        lines.append(f"- {lang}: {cnt} ({cnt / total_l * 100:.1f}%)")
+                    lines.append("")
 
             return [TextContent(type="text", text="\n".join(lines))]
 
