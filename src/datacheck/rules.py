@@ -443,6 +443,66 @@ def get_llm_ruleset(provider: str = "anthropic", model: str = None) -> RuleSet:
     return ruleset
 
 
+def get_annotation_ruleset() -> RuleSet:
+    """Get rule set for annotation/labeling results from datalabel.
+
+    Optimized for checking annotation quality:
+    - Skips non_empty on comment (empty comments are valid)
+    - Skips length_bounds (not relevant for annotation fields)
+    - Validates score against scoring_rubric
+    - Checks required annotation fields (task_id, annotated_at)
+    """
+    ruleset = RuleSet("annotation")
+
+    # Disable rules that don't apply to annotation results
+    ruleset.enable_rule("non_empty", False)
+    ruleset.enable_rule("length_bounds", False)
+    ruleset.enable_rule("required_fields", False)
+    ruleset.enable_rule("format_valid", False)
+
+    # task_id must exist
+    ruleset.add_rule(
+        Rule(
+            id="annotation_task_id",
+            name="标注任务ID",
+            description="检查标注结果是否包含 task_id",
+            severity=Severity.ERROR,
+            check_fn=lambda s, _: bool(s.get("data", s).get("task_id")),
+        )
+    )
+
+    # annotated_at must exist
+    ruleset.add_rule(
+        Rule(
+            id="annotation_timestamp",
+            name="标注时间戳",
+            description="检查标注结果是否包含 annotated_at 时间戳",
+            severity=Severity.WARNING,
+            check_fn=lambda s, _: bool(s.get("data", s).get("annotated_at")),
+        )
+    )
+
+    # Annotation value must exist (score, choice, text, or ranking)
+    def _check_has_annotation(sample, schema):
+        data = sample.get("data", sample)
+        annotation_fields = ["score", "choice", "choices", "text", "ranking"]
+        return any(f in data for f in annotation_fields)
+
+    ruleset.add_rule(
+        Rule(
+            id="annotation_value_exists",
+            name="标注值存在",
+            description="检查标注结果是否包含评分/选择/文本/排序值",
+            severity=Severity.ERROR,
+            check_fn=_check_has_annotation,
+        )
+    )
+
+    # score_valid is already in builtin rules and works with scoring_rubric
+
+    return ruleset
+
+
 def get_preference_ruleset() -> RuleSet:
     """Get rule set for preference data."""
     ruleset = RuleSet("preference")

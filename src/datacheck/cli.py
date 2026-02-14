@@ -9,7 +9,7 @@ import click
 from datacheck import __version__
 from datacheck.checker import DataChecker
 from datacheck.report import BatchQualityReport, QualityReport
-from datacheck.rules import RuleSet, get_sft_ruleset, get_preference_ruleset, get_llm_ruleset
+from datacheck.rules import RuleSet, get_sft_ruleset, get_preference_ruleset, get_annotation_ruleset, get_llm_ruleset
 
 
 @click.group()
@@ -32,9 +32,9 @@ def main():
 )
 @click.option(
     "--ruleset",
-    type=click.Choice(["default", "sft", "preference", "llm"]),
+    type=click.Choice(["default", "sft", "preference", "annotation", "llm"]),
     default="default",
-    help="规则集 (llm 需要 pip install knowlyr-datacheck[llm])",
+    help="规则集 (annotation 用于标注结果, llm 需要 pip install knowlyr-datacheck[llm])",
 )
 @click.option("--rules-file", type=click.Path(exists=True), default=None, help="自定义规则配置文件 (YAML)")
 @click.option("--sample", type=int, default=None, help="随机抽样数量")
@@ -66,6 +66,8 @@ def check(
         rules = get_sft_ruleset()
     elif ruleset == "preference":
         rules = get_preference_ruleset()
+    elif ruleset == "annotation":
+        rules = get_annotation_ruleset()
     elif ruleset == "llm":
         rules = get_llm_ruleset()
     else:
@@ -454,6 +456,8 @@ def watch(data_path: str, schema: Optional[str], ruleset: str, debounce: float):
         rules = get_sft_ruleset()
     elif ruleset == "preference":
         rules = get_preference_ruleset()
+    elif ruleset == "annotation":
+        rules = get_annotation_ruleset()
     elif ruleset == "llm":
         rules = get_llm_ruleset()
     else:
