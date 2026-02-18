@@ -55,10 +55,10 @@ LLM 训练数据的质量验证面临三个结构性问题：
 
 | 维度 | 符号 | 度量 | 对应规则 |
 |:---|:---|:---|:---|
-| **完整性** Completeness | $Q_c$ | $1 - \frac{|\{x: \exists f \in F_{\text{req}}, x.f = \emptyset\}|}{|D|}$ | required_fields, non_empty |
-| **唯一性** Uniqueness | $Q_u$ | $1 - \frac{|\text{dup}(D)|}{|D|}$ | duplicate, near_duplicate |
-| **有效性** Validity | $Q_v$ | $1 - \frac{|\{x: \neg \text{valid}(x)\}|}{|D|}$ | format_valid, length_bounds, score_valid |
-| **合规性** Compliance | $Q_a$ | $1 - \frac{|\{x: \text{pii}(x) \lor \text{garbled}(x)\}|}{|D|}$ | pii_detection, garbled_text |
+| **完整性** Completeness | $Q_c$ | $1 - \lvert\{x: \exists f \in F_{\text{req}}, x.f = \emptyset\}\rvert / \lvert D\rvert$ | required_fields, non_empty |
+| **唯一性** Uniqueness | $Q_u$ | $1 - \lvert\text{dup}(D)\rvert / \lvert D\rvert$ | duplicate, near_duplicate |
+| **有效性** Validity | $Q_v$ | $1 - \lvert\{x: \neg \text{valid}(x)\}\rvert / \lvert D\rvert$ | format_valid, length_bounds, score_valid |
+| **合规性** Compliance | $Q_a$ | $1 - \lvert\{x: \text{pii}(x) \lor \text{garbled}(x)\}\rvert / \lvert D\rvert$ | pii_detection, garbled_text |
 
 ### Composite Quality Score
 
