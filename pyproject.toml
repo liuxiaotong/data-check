@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "knowlyr-datacheck"
-version = "0.5.0"
+version = "0.5.1"
 description = "Data quality inspection toolkit - automated validation, anomaly detection, and distribution analysis"
 readme = "README.md"
 license = "MIT"
@@ -37,8 +37,9 @@ llm = ["anthropic>=0.18", "openai>=1.0"]
 mcp = ["mcp>=1.0"]
 yaml = ["PyYAML>=6.0"]
 watch = ["watchdog>=3.0"]
+server = ["fastapi>=0.104.0", "uvicorn[standard]>=0.24.0", "pydantic-settings>=2.0.0"]
 dev = ["pytest", "ruff"]
-all = ["knowlyr-datacheck[stats,llm,mcp,yaml,watch,dev]"]
+all = ["knowlyr-datacheck[stats,llm,mcp,yaml,watch,server,dev]"]
 
 [project.scripts]
 knowlyr-datacheck = "datacheck.cli:main"
