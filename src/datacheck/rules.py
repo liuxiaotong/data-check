@@ -76,6 +76,26 @@ class Rule:
             )
 
 
+def _eval_condition(val, operator, target):
+    """Evaluate a condition for conditional_required rules."""
+    if val is None:
+        return False
+    try:
+        val = float(val)
+        target = float(target)
+    except (ValueError, TypeError):
+        return str(val) == str(target)
+    ops = {
+        ">": val > target,
+        ">=": val >= target,
+        "<": val < target,
+        "<=": val <= target,
+        "==": val == target,
+        "!=": val != target,
+    }
+    return ops.get(operator, False)
+
+
 class RuleSet:
     """A collection of quality check rules."""
 
@@ -241,7 +261,7 @@ class RuleSet:
 
     @staticmethod
     def _build_config_check_fn(
-        field_name: str, check_type: str, rule_def: dict
+        field_name: str, check_type: str, rule_def: dict  # noqa: C901
     ) -> Callable[[Dict[str, Any], Dict[str, Any]], bool]:
         """Build a check function from config definition."""
         if check_type == "required":
@@ -279,6 +299,41 @@ class RuleSet:
         elif check_type == "enum":
             allowed = set(rule_def.get("values", []))
             return lambda sample, schema: sample.get("data", sample).get(field_name) in allowed
+
+        elif check_type == "conditional_required":
+            # 当条件字段满足某条件时，目标字段必填
+            cond_field = rule_def["condition"]["field"]
+            operator = rule_def["condition"]["operator"]
+            cond_value = rule_def["condition"]["value"]
+
+            def _check(sample, schema, _cf=cond_field, _op=operator, _cv=cond_value, _fn=field_name):
+                data = sample.get("data", sample)
+                cond_val = data.get(_cf)
+                if not _eval_condition(cond_val, _op, _cv):
+                    return True  # 条件不满足时跳过
+                target_val = data.get(_fn)
+                return target_val is not None and str(target_val).strip() != ""
+            return _check
+
+        elif check_type == "number_range":
+            min_val = rule_def.get("min")
+            max_val = rule_def.get("max")
+
+            def _check(sample, schema, _fn=field_name, _min=min_val, _max=max_val):
+                data = sample.get("data", sample)
+                val = data.get(_fn)
+                if val is None:
+                    return True  # 空值由 required 规则检查
+                try:
+                    num = float(val)
+                except (ValueError, TypeError):
+                    return False
+                if _min is not None and num < _min:
+                    return False
+                if _max is not None and num > _max:
+                    return False
+                return True
+            return _check
 
         else:
             raise ValueError(f"未知的检查类型: {check_type}")

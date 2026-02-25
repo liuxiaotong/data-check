@@ -1,0 +1,23 @@
+name: vip_price_annotation
+description: 唯品会比价标注质检规则
+rules:
+  - field: guidePriceOne
+    check: conditional_required
+    condition:
+      field: productStatus
+      operator: ">"
+      value: 0
+    severity: error
+    message: "商品在售时外网价格不能为空"
+
+  - field: guidePriceOne
+    check: number_range
+    min: 0
+    severity: error
+    message: "价格必须为非负数"
+
+  - field: productStatus
+    check: enum
+    values: [1, -1, -2, -3]
+    severity: error
+    message: "商品状态必须是有效值 (1/-1/-2/-3)"
