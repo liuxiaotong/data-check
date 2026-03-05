@@ -1,10 +1,10 @@
 """报告生成路由"""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from datacheck.checker import CheckResult
 from datacheck.report import QualityReport

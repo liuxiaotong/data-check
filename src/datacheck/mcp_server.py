@@ -734,7 +734,7 @@ def create_server() -> "Server":
 
             if "category" in dimensions and label_field:
                 labels = [s.get(label_field) for s in samples if label_field in s]
-                counter = Counter(str(l) for l in labels if l is not None)
+                counter = Counter(str(lb) for lb in labels if lb is not None)
                 if counter:
                     sorted_cats = counter.most_common()
                     ratio = sorted_cats[0][1] / sorted_cats[-1][1] if sorted_cats[-1][1] > 0 else float("inf")

@@ -15,7 +15,7 @@ try:
             env_prefix = "DATA_CHECK_"
 
 except ImportError:
-    from dataclasses import dataclass, field
+    from dataclasses import dataclass
 
     @dataclass
     class Settings:
