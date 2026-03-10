@@ -6,6 +6,9 @@
 
 <div align="center">
 
+<img src="assets/icon.png" width="128" alt="data-check icon">
+<br/>
+
 <h1>DataCheck</h1>
 
 <h3>多维数据质量验证框架<br/>Multi-Dimensional Data Quality Validation</h3>
