@@ -1,0 +1,16 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    uses: liuxiaotong/knowlyr-workflows/.github/workflows/reusable-publish-pypi.yml@main
+    with:
+      build_tool: "setuptools"
+      run_tests: true
+      test_command: "pytest tests/"
+    permissions:
+      id-token: write
+      contents: read
